@@ -43,6 +43,8 @@ export default function AboutScreen() {
           <InfoRow label="Storage" value="SQLite (local)" />
           <View style={[styles.sep, { backgroundColor: colors.hairline, marginLeft: 16 }]} />
           <InfoRow label="Network" value="None — fully offline" />
+          <View style={[styles.sep, { backgroundColor: colors.hairline, marginLeft: 16 }]} />
+          <InfoRow label="Author" value="Piush <mail@piush.in>" />
         </View>
 
         <View

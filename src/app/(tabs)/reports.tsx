@@ -1,12 +1,11 @@
 /**
- * src/app/(tabs)/reports.tsx — Reports screen, fully theme-aware.
+ * src/app/(tabs)/reports.tsx
  *
- * Fixes:
- * - All hardcoded colors replaced with theme tokens
- * - "All" filter pill correctly deselects category
- * - Yearly mode uses monthly aggregation (ExpenseMonthlyLineChart) instead of
- *   365 daily points
- * - Charts receive isDark from theme
+ * Period modes:
+ *   daily   — bar chart of spend per category, donut, breakdown, expense list
+ *   weekly  — line chart (Mon–Sun), donut, breakdown, expense list
+ *   monthly — bar chart (one bar per day), donut, breakdown, expense list
+ *   yearly  — line chart (Jan–Dec monthly totals), donut, breakdown, expense list
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
+  ExpenseCategoryBarChart,
   ExpenseDonutChart,
   ExpenseLineChart,
   ExpenseMonthlyLineChart,
@@ -28,7 +28,6 @@ import {
 import ExpenseList from "@/components/ExpenseList";
 import { useTheme } from "@/context/ThemeContext";
 import {
-  getAllCategories,
   getDailyTotalsInRange,
   getExpenseSummaryInRange,
   getExpensesInRange,
@@ -38,7 +37,6 @@ import {
   getWeekRange,
   getYearRange,
   toISODate,
-  type Category,
   type CategorySummary,
   type DailyTotal,
   type MonthlyTotal,
@@ -65,7 +63,7 @@ function getRangeForPeriod(
       start: s,
       end: s,
       label: d.toLocaleDateString("en-IN", {
-        weekday: "short",
+        weekday: "long",
         day: "numeric",
         month: "short",
       }),
@@ -99,23 +97,32 @@ function getRangeForPeriod(
   // yearly
   const base = new Date(now.getFullYear() + offset, 0, 1);
   const { start, end } = getYearRange(base);
-  return {
-    start,
-    end,
-    label: String(base.getFullYear()),
-  };
+  return { start, end, label: String(base.getFullYear()) };
 }
 
 function shortDayLabel(date: string): string {
-  const d = new Date(date + "T00:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "short" });
+  return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "short",
+  });
+}
+
+function dayOfMonthLabel(date: string): string {
+  return String(parseInt(date.slice(8), 10));
 }
 
 function shortMonthLabel(month: string): string {
-  // month is YYYY-MM
-  const d = new Date(month + "-01T00:00:00");
-  return d.toLocaleDateString("en-US", { month: "short" });
+  return new Date(month + "-01T00:00:00").toLocaleDateString("en-US", {
+    month: "short",
+  });
 }
+
+// Section title for the main chart
+const CHART_TITLE: Record<PeriodMode, string> = {
+  daily: "Spend by category",
+  weekly: "Spending trend",
+  monthly: "Spending trend",
+  yearly: "Monthly trend",
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -124,15 +131,10 @@ const PERIOD_MODES: PeriodMode[] = ["daily", "weekly", "monthly", "yearly"];
 export default function ReportsScreen() {
   const { colors } = useTheme();
 
-  const [mode, setMode] = useState<PeriodMode>("weekly");
+  const [mode, setMode] = useState<PeriodMode>("daily");
   const [offset, setOffset] = useState(0);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
 
-  // null = All selected; number = specific category
-  const [selectedCategoryId, setSelectedCategoryId] = useState<
-    number | null
-  >(null);
-
-  const [categories, setCategories] = useState<Category[]>([]);
   const [dailyTotals, setDailyTotals] = useState<DailyTotal[]>([]);
   const [monthlyTotals, setMonthlyTotals] = useState<MonthlyTotal[]>([]);
   const [categorySummary, setCategorySummary] = useState<CategorySummary[]>([]);
@@ -148,15 +150,16 @@ export default function ReportsScreen() {
   const catIdArg = selectedCategoryId ?? undefined;
 
   const loadData = useCallback(() => {
-    setCategories(getAllCategories());
     setCategorySummary(getExpenseSummaryInRange(start, end));
     setTotal(getTotalInRange(start, end));
     setExpenses(getExpensesInRange(start, end, catIdArg));
 
     if (mode === "yearly") {
       setMonthlyTotals(getMonthlyTotalsInRange(start, end, catIdArg));
+      setDailyTotals([]);
     } else {
       setDailyTotals(getDailyTotalsInRange(start, end, catIdArg));
+      setMonthlyTotals([]);
     }
   }, [start, end, catIdArg, mode]);
 
@@ -177,6 +180,8 @@ export default function ReportsScreen() {
   }
 
   function handleCategoryPress(id: number) {
+    // Category filter only applies in non-daily modes (daily always shows all categories)
+    if (mode === "daily") return;
     setSelectedCategoryId((prev) => (prev === id ? null : id));
   }
 
@@ -184,7 +189,7 @@ export default function ReportsScreen() {
     setSelectedCategoryId(null);
   }
 
-  // Dynamic styles that depend on theme
+  // ── Dynamic styles ──────────────────────────────────────────────────────────
   const S = useMemo(
     () =>
       StyleSheet.create({
@@ -230,7 +235,6 @@ export default function ReportsScreen() {
           justifyContent: "center" as const,
           width: 36,
         },
-        navBtnDisabled: { opacity: 0.3 },
         navBtnText: { color: colors.ink, fontSize: 20, lineHeight: 24 },
         navLabel: {
           color: colors.ink,
@@ -240,29 +244,27 @@ export default function ReportsScreen() {
           textAlign: "center" as const,
         },
         totalCard: {
-          backgroundColor: colors.ink,
+          backgroundColor: colors.backgroundSoft,
           borderRadius: 16,
           marginBottom: 16,
           padding: 20,
         },
         totalLabel: {
-          color: colors.background,
+          color: colors.body,
           fontFamily: "Inter",
           fontSize: 13,
           marginBottom: 4,
-          opacity: 0.6,
         },
         totalAmount: {
-          color: colors.background,
+          color: colors.ink,
           fontFamily: "Inter-Bold",
           fontSize: 32,
         },
         filterNote: {
-          color: colors.background,
+          color: colors.mute,
           fontFamily: "Inter",
           fontSize: 11,
           marginTop: 4,
-          opacity: 0.6,
         },
         pill: {
           alignItems: "center" as const,
@@ -338,6 +340,9 @@ export default function ReportsScreen() {
     [colors]
   );
 
+  // In daily mode category pills are irrelevant — we always show all categories
+  const showCategoryFilter = mode !== "daily" && categorySummary.length > 0;
+
   return (
     <SafeAreaView style={S.safe} edges={["top"]}>
       <ScrollView
@@ -352,7 +357,6 @@ export default function ReportsScreen() {
           />
         }
       >
-        {/* Title */}
         <Text style={S.screenTitle}>Reports</Text>
 
         {/* Period toggle */}
@@ -363,9 +367,7 @@ export default function ReportsScreen() {
               style={[S.modeBtn, mode === m && S.modeBtnActive]}
               onPress={() => handleModeChange(m)}
             >
-              <Text
-                style={[S.modeBtnText, mode === m && S.modeBtnTextActive]}
-              >
+              <Text style={[S.modeBtnText, mode === m && S.modeBtnTextActive]}>
                 {m.charAt(0).toUpperCase() + m.slice(1)}
               </Text>
             </TouchableOpacity>
@@ -382,11 +384,11 @@ export default function ReportsScreen() {
           </TouchableOpacity>
           <Text style={S.navLabel}>{label}</Text>
           <TouchableOpacity
-            style={[S.navBtn, offset >= 0 && S.navBtnDisabled]}
+            style={[S.navBtn, offset >= 0 && { opacity: 0.3 }]}
             onPress={() => setOffset((o) => Math.min(o + 1, 0))}
             disabled={offset >= 0}
           >
-            <Text style={[S.navBtnText, offset >= 0 && { opacity: 0.3 }]}>›</Text>
+            <Text style={S.navBtnText}>›</Text>
           </TouchableOpacity>
         </View>
 
@@ -395,51 +397,33 @@ export default function ReportsScreen() {
           <Text style={S.totalLabel}>Total spent</Text>
           <Text style={S.totalAmount}>₹{total.toFixed(2)}</Text>
           {selectedCategoryId !== null && (
-            <Text style={S.filterNote}>
-              Filtered — tap All to see everything
-            </Text>
+            <Text style={S.filterNote}>Filtered — tap All to see everything</Text>
           )}
         </View>
 
-        {/* Category filter pills */}
-        {categorySummary.length > 0 && (
+        {/* Category filter pills — hidden in daily mode */}
+        {showCategoryFilter && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.pillScroll}
             contentContainerStyle={styles.pillRow}
           >
-            {/* All pill */}
             <TouchableOpacity
               style={[S.pill, selectedCategoryId === null && S.pillActive]}
               onPress={handleAllPress}
             >
-              <Text
-                style={[
-                  S.pillText,
-                  selectedCategoryId === null && S.pillTextActive,
-                ]}
-              >
+              <Text style={[S.pillText, selectedCategoryId === null && S.pillTextActive]}>
                 All
               </Text>
             </TouchableOpacity>
-
-            {/* Category pills */}
             {categorySummary.map((s) => (
               <TouchableOpacity
                 key={s.category_id}
-                style={[
-                  S.pill,
-                  selectedCategoryId === s.category_id && S.pillActive,
-                ]}
+                style={[S.pill, selectedCategoryId === s.category_id && S.pillActive]}
                 onPress={() => handleCategoryPress(s.category_id)}
               >
-                <View
-                  style={[
-                    styles.pillDot,
-                    { backgroundColor: s.category_color },
-                  ]}
-                />
+                <View style={[styles.pillDot, { backgroundColor: s.category_color }]} />
                 <Text
                   style={[
                     S.pillText,
@@ -453,14 +437,31 @@ export default function ReportsScreen() {
           </ScrollView>
         )}
 
-        {/* Trend chart — line for daily/weekly/monthly, monthly-aggregated for yearly */}
+        {/*
+          Main chart — varies by mode:
+            daily   → category bar chart (x = category, y = total)
+            weekly  → line chart         (x = day of week, y = total)
+            monthly → bar chart          (x = day of month, y = total)
+            yearly  → line chart         (x = month, y = total)
+        */}
         <View style={styles.section}>
-          <Text style={S.sectionTitle}>Spending trend</Text>
+          <Text style={S.sectionTitle}>{CHART_TITLE[mode]}</Text>
           <View style={S.chartCard}>
-            {mode === "yearly" ? (
+            {mode === "daily" ? (
+              <ExpenseCategoryBarChart
+                data={categorySummary}
+                height={220}
+              />
+            ) : mode === "yearly" ? (
               <ExpenseMonthlyLineChart
                 data={monthlyTotals}
                 xLabelFormatter={shortMonthLabel}
+                height={200}
+              />
+            ) : mode === "monthly" ? (
+              <ExpenseLineChart
+                data={dailyTotals}
+                xLabelFormatter={dayOfMonthLabel}
                 height={200}
               />
             ) : (
@@ -473,7 +474,7 @@ export default function ReportsScreen() {
           </View>
         </View>
 
-        {/* Donut chart — only when no category filter */}
+        {/* Donut chart — always show when there's data and no category filter */}
         {selectedCategoryId === null && categorySummary.length > 0 && (
           <View style={styles.section}>
             <Text style={S.sectionTitle}>By category</Text>
@@ -487,7 +488,7 @@ export default function ReportsScreen() {
           </View>
         )}
 
-        {/* Breakdown table — only when no category filter */}
+        {/* Breakdown table */}
         {selectedCategoryId === null && categorySummary.length > 0 && (
           <View style={styles.section}>
             <Text style={S.sectionTitle}>Breakdown</Text>
@@ -498,21 +499,17 @@ export default function ReportsScreen() {
                   <TouchableOpacity
                     style={S.breakdownRow}
                     onPress={() => handleCategoryPress(s.category_id)}
+                    activeOpacity={mode === "daily" ? 1 : 0.7}
                   >
                     <View
-                      style={[
-                        styles.breakdownDot,
-                        { backgroundColor: s.category_color },
-                      ]}
+                      style={[styles.breakdownDot, { backgroundColor: s.category_color }]}
                     />
                     <Text style={S.breakdownName} numberOfLines={1}>
                       {s.category_name}
                     </Text>
                     <View style={styles.breakdownRight}>
                       <Text style={S.breakdownCount}>{s.count}×</Text>
-                      <Text style={S.breakdownAmount}>
-                        ₹{s.total.toFixed(2)}
-                      </Text>
+                      <Text style={S.breakdownAmount}>₹{s.total.toFixed(2)}</Text>
                     </View>
                   </TouchableOpacity>
                   <View style={S.barBg}>
@@ -537,18 +534,23 @@ export default function ReportsScreen() {
           <Text style={S.sectionTitle}>
             {selectedCategoryId !== null
               ? `${
-                  categorySummary.find(
-                    (s) => s.category_id === selectedCategoryId
-                  )?.category_name ?? "Category"
+                  categorySummary.find((s) => s.category_id === selectedCategoryId)
+                    ?.category_name ?? "Category"
                 } expenses`
+              : mode === "daily"
+              ? "Today's expenses"
               : "All expenses"}
           </Text>
           <View style={S.listCard}>
             <ExpenseList
               expenses={expenses}
               onRefresh={loadData}
-              showDate
-              emptyMessage="No expenses for this period"
+              showDate={mode !== "daily"}
+              emptyMessage={
+                mode === "daily"
+                  ? "No expenses today"
+                  : "No expenses for this period"
+              }
             />
           </View>
         </View>
@@ -557,12 +559,10 @@ export default function ReportsScreen() {
   );
 }
 
-// ─── Static styles (no theme dependency) ─────────────────────────────────────
+// ─── Static styles ────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  // Extra paddingBottom: 140 accounts for absolute-positioned tab bar (60) +
-  // typical bottom inset (34) + breathing room (46)
   content: { paddingBottom: 140, paddingHorizontal: 16 },
   pillScroll: { marginBottom: 20 },
   pillRow: { flexDirection: "row", gap: 8 },

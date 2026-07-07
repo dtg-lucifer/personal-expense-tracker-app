@@ -8,7 +8,7 @@
  * background/text colors so the chart blends seamlessly with the UI.
  */
 
-import { DonutChart, LineChart } from "react-native-chart-kit/v2";
+import { BarChart, DonutChart, LineChart } from "react-native-chart-kit/v2";
 import type { CartesianChartTheme } from "react-native-chart-kit/v2";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
@@ -124,6 +124,108 @@ export function ExpenseMonthlyLineChart({
       width={chartWidth}
       height={height}
       curve="monotone"
+      theme={buildChartTheme(colors)}
+    />
+  );
+}
+
+// ─── BarChart wrapper (daily data — for monthly view) ────────────────────────
+
+interface ExpenseBarChartProps {
+  data: DailyTotal[];
+  xLabelFormatter?: (date: string) => string;
+  height?: number;
+}
+
+export function ExpenseBarChart({
+  data,
+  xLabelFormatter,
+  height = 200,
+}: ExpenseBarChartProps) {
+  const { width } = useWindowDimensions();
+  const { colors } = useTheme();
+  const chartWidth = width - 32;
+
+  if (data.length === 0) {
+    return (
+      <View
+        style={[
+          styles.emptyChart,
+          { height, backgroundColor: colors.backgroundSoft },
+        ]}
+      >
+        <Text style={[styles.emptyText, { color: colors.mute }]}>
+          No data for this period
+        </Text>
+      </View>
+    );
+  }
+
+  const chartData = data.map((d) => ({
+    label: xLabelFormatter ? xLabelFormatter(d.date) : d.date.slice(8), // default: day of month
+    total: d.total,
+  }));
+
+  return (
+    <BarChart
+      data={chartData}
+      xKey="label"
+      series={[{ yKey: "total", color: colors.ink }]}
+      width={chartWidth}
+      height={height}
+      theme={buildChartTheme(colors)}
+    />
+  );
+}
+
+// ─── BarChart wrapper (category totals — for daily view) ─────────────────────
+// One bar per category. x = shortened category name, y = total spend.
+// Uses a single series (color = ink) since BarChart colors per-series not per-bar.
+// The donut + breakdown below the chart provides the color-coded detail.
+
+interface ExpenseCategoryBarChartProps {
+  data: CategorySummary[];
+  height?: number;
+}
+
+export function ExpenseCategoryBarChart({
+  data,
+  height = 220,
+}: ExpenseCategoryBarChartProps) {
+  const { width } = useWindowDimensions();
+  const { colors } = useTheme();
+  const chartWidth = width - 32;
+
+  if (data.length === 0) {
+    return (
+      <View
+        style={[
+          styles.emptyChart,
+          { height, backgroundColor: colors.backgroundSoft },
+        ]}
+      >
+        <Text style={[styles.emptyText, { color: colors.mute }]}>
+          No expenses today
+        </Text>
+      </View>
+    );
+  }
+
+  // Shorten long category names so x-axis labels don't overlap
+  const chartData = data.map((d) => ({
+    label: d.category_name.length > 8
+      ? d.category_name.slice(0, 7) + "…"
+      : d.category_name,
+    total: d.total,
+  }));
+
+  return (
+    <BarChart
+      data={chartData}
+      xKey="label"
+      series={[{ yKey: "total", color: colors.ink }]}
+      width={chartWidth}
+      height={height}
       theme={buildChartTheme(colors)}
     />
   );

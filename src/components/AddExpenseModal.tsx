@@ -1,29 +1,14 @@
 /**
  * components/AddExpenseModal.tsx
  *
- * Correct bottom-sheet layout that actually opens and handles the keyboard:
- *
- *   <Modal>
- *     <Pressable absoluteFill />              ← backdrop, absolutely positioned
- *     <KeyboardAvoidingView flex:1            ← MUST have flex:1 to have a measured
- *                           justifyContent="flex-end">   height for KAV to work with
- *       <View sheet flexShrink:1 maxHeight:92% />   ← flexShrink so it compresses
- *         <ScrollView flexShrink:1 />               ← gives up space to keyboard
- *     </KeyboardAvoidingView>
- *   </Modal>
- *
- * Why the old code was broken:
- * - KAV had no flex/height → no measured height → couldn't push anything
- * - ScrollView flex:1 inside a parent with no height = collapses to 0
- * - Only the handle + header rendered because those are fixed-height
- *
- * Keyboard behavior:
- * - iOS:     behavior="padding"  — KAV adds bottom padding equal to keyboard height
- * - Android: behavior="height"   — KAV shrinks its own height by keyboard height
- * Both cause the sheet to move up. flexShrink:1 on sheet + ScrollView lets them
- * compress gracefully without overflowing the screen.
+ * Bottom-sheet with native date picker:
+ * - Android: DateTimePickerAndroid.open() — native calendar dialog
+ * - iOS: inline DateTimePicker rendered inside the sheet
  */
 
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from "@react-native-community/datetimepicker";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -45,6 +30,7 @@ import {
   getAllCategories,
   insertExpense,
   today,
+  toISODate,
   type Category,
 } from "@/lib/database";
 
@@ -53,6 +39,21 @@ interface Props {
   onClose: () => void;
   onAdded: () => void;
   defaultDate?: string;
+}
+
+function parseISODate(s: string): Date {
+  // Parse YYYY-MM-DD without timezone shifting
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatDisplayDate(iso: string): string {
+  return parseISODate(iso).toLocaleDateString("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function AddExpenseModal({
@@ -72,6 +73,7 @@ export default function AddExpenseModal({
   const [tags, setTags] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showIOSDatePicker, setShowIOSDatePicker] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const amountRef = useRef<TextInput>(null);
 
@@ -92,10 +94,32 @@ export default function AddExpenseModal({
       setTags("");
       setErrors({});
       setShowCategoryPicker(false);
+      setShowIOSDatePicker(false);
     }
   }, [visible, defaultDate]);
 
   const selectedCategory = categories.find((c) => c.id === categoryId);
+
+  function openDatePicker() {
+    // Dismiss category dropdown if open
+    setShowCategoryPicker(false);
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        value: parseISODate(date),
+        mode: "date",
+        display: "calendar",
+        maximumDate: new Date(),
+        onChange: (event, picked) => {
+          if (event.type === "set" && picked) {
+            setDate(toISODate(picked));
+            setErrors((e) => ({ ...e, date: "" }));
+          }
+        },
+      });
+    } else {
+      setShowIOSDatePicker((v) => !v);
+    }
+  }
 
   function validate() {
     const errs: Record<string, string> = {};
@@ -134,22 +158,12 @@ export default function AddExpenseModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      {/* Backdrop — absoluteFill so it doesn't participate in flex layout */}
       <Pressable style={styles.backdrop} onPress={onClose} />
 
-      {/*
-        KAV needs flex:1 to have a real measured height. Without it, the KAV
-        has zero height and can't shift the sheet up when the keyboard opens.
-        justifyContent="flex-end" pins the sheet to the bottom.
-      */}
       <KeyboardAvoidingView
         style={styles.kav}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/*
-          flexShrink:1 — the sheet sizes itself to its content but can compress
-          when KAV squeezes it. maxHeight caps it at 92% of the screen.
-        */}
         <View
           style={[
             styles.sheet,
@@ -159,10 +173,8 @@ export default function AddExpenseModal({
             },
           ]}
         >
-          {/* Handle */}
           <View style={[styles.handle, { backgroundColor: colors.hairline }]} />
 
-          {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.ink }]}>Log expense</Text>
             <TouchableOpacity
@@ -174,11 +186,6 @@ export default function AddExpenseModal({
             </TouchableOpacity>
           </View>
 
-          {/*
-            ScrollView flexShrink:1 — it gives up height first when the sheet
-            is compressed, keeping the header always visible. All fields remain
-            reachable by scrolling.
-          */}
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
@@ -186,6 +193,7 @@ export default function AddExpenseModal({
             keyboardShouldPersistTaps="handled"
             bounces={false}
           >
+            {/* Name */}
             <Field label="Name" error={errors.name} colors={colors}>
               <TextInput
                 style={[
@@ -206,6 +214,7 @@ export default function AddExpenseModal({
               />
             </Field>
 
+            {/* Amount */}
             <Field label="Amount" error={errors.amount} colors={colors}>
               <TextInput
                 ref={amountRef}
@@ -227,6 +236,7 @@ export default function AddExpenseModal({
               />
             </Field>
 
+            {/* Category */}
             <Field label="Category" error={errors.category} colors={colors}>
               <TouchableOpacity
                 style={[
@@ -242,9 +252,7 @@ export default function AddExpenseModal({
                 activeOpacity={0.7}
               >
                 {selectedCategory && (
-                  <View
-                    style={[styles.dot, { backgroundColor: selectedCategory.color }]}
-                  />
+                  <View style={[styles.dot, { backgroundColor: selectedCategory.color }]} />
                 )}
                 <Text style={[styles.pickerText, { color: colors.ink }]}>
                   {selectedCategory?.name ?? "Select category"}
@@ -258,46 +266,51 @@ export default function AddExpenseModal({
                 <View
                   style={[
                     styles.dropList,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: colors.hairline,
-                    },
+                    { backgroundColor: colors.background, borderColor: colors.hairline },
                   ]}
                 >
-                  {categories.map((cat) => (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={[
-                        styles.dropItem,
-                        { borderBottomColor: colors.backgroundSoft },
-                        cat.id === categoryId && {
-                          backgroundColor: colors.backgroundSofter,
-                        },
-                      ]}
-                      onPress={() => {
-                        setCategoryId(cat.id);
-                        setShowCategoryPicker(false);
-                      }}
-                    >
-                      <View style={[styles.dot, { backgroundColor: cat.color }]} />
-                      <Text
+                  <ScrollView
+                    style={styles.dropScroll}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                  >
+                    {categories.map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
                         style={[
-                          styles.dropItemText,
-                          { color: colors.ink },
-                          cat.id === categoryId && { fontFamily: "Inter-Medium" },
+                          styles.dropItem,
+                          { borderBottomColor: colors.backgroundSoft },
+                          cat.id === categoryId && {
+                            backgroundColor: colors.backgroundSofter,
+                          },
                         ]}
+                        onPress={() => {
+                          setCategoryId(cat.id);
+                          setShowCategoryPicker(false);
+                        }}
                       >
-                        {cat.name}
-                      </Text>
-                      {cat.id === categoryId && (
-                        <Text style={[styles.check, { color: colors.ink }]}>✓</Text>
-                      )}
-                    </TouchableOpacity>
-                  ))}
+                        <View style={[styles.dot, { backgroundColor: cat.color }]} />
+                        <Text
+                          style={[
+                            styles.dropItemText,
+                            { color: colors.ink },
+                            cat.id === categoryId && { fontFamily: "Inter-Medium" },
+                          ]}
+                        >
+                          {cat.name}
+                        </Text>
+                        {cat.id === categoryId && (
+                          <Text style={[styles.check, { color: colors.ink }]}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
             </Field>
 
+            {/* Description */}
             <Field label="Description (optional)" colors={colors}>
               <TextInput
                 style={[
@@ -319,25 +332,64 @@ export default function AddExpenseModal({
               />
             </Field>
 
+            {/* Date — tappable row that opens native picker */}
             <Field label="Date" error={errors.date} colors={colors}>
-              <TextInput
+              <TouchableOpacity
                 style={[
                   styles.input,
+                  styles.pickerRow,
                   {
                     backgroundColor: colors.backgroundSoft,
-                    color: colors.ink,
                     borderColor: errors.date ? "#dc2626" : "transparent",
                     borderWidth: 1,
                   },
                 ]}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.mute}
-                value={date}
-                onChangeText={setDate}
-                keyboardType="numbers-and-punctuation"
-              />
+                onPress={openDatePicker}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.calIcon, { color: colors.body }]}>📅</Text>
+                <Text style={[styles.pickerText, { color: colors.ink }]}>
+                  {formatDisplayDate(date)}
+                </Text>
+                <Text style={[styles.chevron, { color: colors.body }]}>▼</Text>
+              </TouchableOpacity>
+
+              {/* iOS inline picker — expands below the date row */}
+              {Platform.OS === "ios" && showIOSDatePicker && (
+                <View
+                  style={[
+                    styles.iosPickerWrap,
+                    { backgroundColor: colors.backgroundSoft },
+                  ]}
+                >
+                  <DateTimePicker
+                    value={parseISODate(date)}
+                    mode="date"
+                    display="inline"
+                    maximumDate={new Date()}
+                    themeVariant={colors.isDark ? "dark" : "light"}
+                    onChange={(event, picked) => {
+                      if (picked) {
+                        setDate(toISODate(picked));
+                        setErrors((e) => ({ ...e, date: "" }));
+                      }
+                      // Keep picker open on iOS inline so user can browse
+                    }}
+                    style={styles.iosPicker}
+                  />
+                  <TouchableOpacity
+                    style={[styles.iosPickerDone, { backgroundColor: colors.ink }]}
+                    onPress={() => setShowIOSDatePicker(false)}
+                  >
+                    <Text style={[styles.iosPickerDoneText, { color: colors.background }]}>
+                      Done
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </Field>
 
+            {/* Tags */}
             <Field label="Tags (space-separated, optional)" colors={colors}>
               <TextInput
                 style={[
@@ -399,17 +451,11 @@ function Field({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  // Backdrop is absolutely positioned — doesn't participate in flex layout
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",
   },
-  // KAV fills the entire screen and pins children to the bottom
-  kav: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  // Sheet sizes to its content but can compress when keyboard appears
+  kav: { flex: 1, justifyContent: "flex-end" },
   sheet: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -440,7 +486,6 @@ const styles = StyleSheet.create({
     width: 32,
   },
   closeBtnText: { fontSize: 14 },
-  // flexShrink:1 — ScrollView compresses when sheet is squeezed by keyboard
   scroll: { flexShrink: 1 },
   scrollContent: { paddingBottom: 24 },
   input: {
@@ -453,15 +498,11 @@ const styles = StyleSheet.create({
   multiline: { height: 80, paddingTop: 14, textAlignVertical: "top" },
   pickerRow: { alignItems: "center", flexDirection: "row", paddingVertical: 14 },
   pickerText: { flex: 1, fontFamily: "Inter", fontSize: 16 },
+  calIcon: { fontSize: 16, marginRight: 10 },
   chevron: { fontSize: 12 },
   dot: { borderRadius: 999, height: 12, marginRight: 10, width: 12 },
-  dropList: {
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 4,
-    maxHeight: 200,
-    overflow: "hidden",
-  },
+  dropList: { borderRadius: 8, borderWidth: 1, marginTop: 4 },
+  dropScroll: { borderRadius: 8, maxHeight: 220 },
   dropItem: {
     alignItems: "center",
     borderBottomWidth: 1,
@@ -471,6 +512,22 @@ const styles = StyleSheet.create({
   },
   dropItemText: { flex: 1, fontFamily: "Inter", fontSize: 15 },
   check: { fontFamily: "Inter-Bold", fontSize: 14 },
+  // iOS inline date picker
+  iosPickerWrap: {
+    borderRadius: 12,
+    marginTop: 8,
+    overflow: "hidden",
+    paddingBottom: 8,
+  },
+  iosPicker: { width: "100%" },
+  iosPickerDone: {
+    alignItems: "center",
+    borderRadius: 999,
+    marginHorizontal: 16,
+    marginTop: 4,
+    paddingVertical: 12,
+  },
+  iosPickerDoneText: { fontFamily: "Inter-Medium", fontSize: 15 },
   fieldWrap: { marginBottom: 20 },
   fieldLabel: { fontFamily: "Inter-Medium", fontSize: 14, marginBottom: 8 },
   fieldError: { color: "#dc2626", fontFamily: "Inter", fontSize: 12, marginTop: 4 },
