@@ -1,56 +1,59 @@
-# Welcome to your Expo app 👋
+# Expense Tracker
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A black-and-white, Uber-inspired expense tracking app built with Expo and Tamagui. Track gains, expenses, set budgets, and visualize your spending — all on-device with SQLite.
 
-## Get started
+## Download
 
-1. Install dependencies
+Grab the latest APK from the [Releases](https://github.com/piush/expense-tracker-self/releases) tab.
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+- **Log transactions** — gains (↑) and expenses (↓) with categories, tags, and descriptions
+- **Budget balance** — set your base balance and track running totals
+- **Savings goals** — monthly or annual targets with progress bars
+- **Charts & reports** — daily, weekly, monthly, and yearly breakdowns (line, bar, donut)
+- **Category manager** — create and manage custom categories
+- **CSV export** — export your data with a date range picker
+- **Full offline** — all data stored locally via SQLite, no account needed
 
-   ```bash
-   npx expo start
-   ```
+## Screenshots
 
-In the output, you'll find options to open the app in a
+| Home | Budget | Savings |
+|:---:|:---:|:---:|
+| ![Home](screenshots/home.png) | ![Budget](screenshots/budget.png) | ![Savings](screenshots/savings.png) |
+| **Reports** | **Settings** | **Add Transaction** |
+| ![Reports](screenshots/reports.png) | ![Settings](screenshots/settings.png) | ![Add Transaction](screenshots/add-transaction.png) |
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Pages
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### Home (`(tabs)/index.tsx`)
+Today's overview and weekly summary. Shows your current balance, recent transactions, and a quick-glance weekly breakdown. Tap any transaction to edit, long-press to delete. FAB to add a new transaction.
 
-## Get a fresh project
+### Budget (`(tabs)/budget.tsx`)
+Set your base balance and track your running total over time. See a line chart of your balance history, plus a full list of all transactions with filters.
 
-When you're ready, run:
+### Savings (`(tabs)/savings.tsx`)
+Create monthly or annual savings goals with target amounts. Large status text (green on track / red behind) and progress bars show how you're doing against each goal.
+
+### Reports (`(tabs)/reports.tsx`)
+Visual breakdowns of your finances — daily, weekly, monthly, and yearly. Line charts for trends, bar charts for comparisons, and donut charts for category distribution.
+
+### Settings (`(tabs)/settings/`)
+- **Theme** — toggle between light and dark mode
+- **Categories** — add, edit, and delete custom categories (predefined ones are locked)
+- **Export** — CSV export with date range picker
+- **Import** — restore data from a CSV backup
+- **About** — app version and info
+
+## Built with
+
+[Expo](https://expo.dev) · [Tamagui](https://tamagui.dev) · [expo-sqlite](https://docs.expo.dev/versions/latest/sdk/sqlite/) · [react-native-chart-kit](https://github.com/indiespirit/react-native-chart-kit)
+
+## Development
 
 ```bash
-npm run reset-project
+bun install
+bun start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Uses file-based routing via `expo-router`. Screens live under `src/app/`.
