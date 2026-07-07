@@ -1,6 +1,15 @@
 /**
  * components/ExportModal.tsx
- * Fixed bottom sheet — no emojis, dark mode aware.
+ *
+ * Bottom-sheet modal using the same correct layout pattern:
+ *
+ *   <Modal>
+ *     <Pressable absoluteFill />      ← backdrop
+ *     <KeyboardAvoidingView flex:1    ← must have flex:1
+ *                           justifyContent="flex-end">
+ *       <View sheet flexShrink:1 />   ← content-hugging, compressible
+ *     </KeyboardAvoidingView>
+ *   </Modal>
  */
 
 import { File, Paths } from "expo-file-system";
@@ -9,7 +18,9 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -45,8 +56,6 @@ export default function ExportModal({ visible, onClose }: Props) {
   const [customEnd, setCustomEnd] = useState(toISODate(new Date()));
   const [exporting, setExporting] = useState(false);
 
-  const s = makeStyles(colors, insets.bottom);
-
   function getRange() {
     if (period === "week") return getWeekRange();
     if (period === "month") return getMonthRange();
@@ -57,7 +66,10 @@ export default function ExportModal({ visible, onClose }: Props) {
   async function handleExport() {
     const { start, end } = getRange();
     if (period === "custom") {
-      if (!start.match(/^\d{4}-\d{2}-\d{2}$/) || !end.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      if (
+        !start.match(/^\d{4}-\d{2}-\d{2}$/) ||
+        !end.match(/^\d{4}-\d{2}-\d{2}$/)
+      ) {
         Alert.alert("Invalid dates", "Use YYYY-MM-DD format.");
         return;
       }
@@ -92,6 +104,7 @@ export default function ExportModal({ visible, onClose }: Props) {
   }
 
   const range = getRange();
+  const bottomPad = insets.bottom > 0 ? insets.bottom : 16;
 
   return (
     <Modal
@@ -101,30 +114,53 @@ export default function ExportModal({ visible, onClose }: Props) {
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Pressable style={s.backdrop} onPress={onClose} />
-      <View style={s.kav}>
-        <View style={s.sheet}>
-          <View style={s.handle} />
+      {/* Backdrop — absoluteFill so it doesn't affect flex layout */}
+      <Pressable style={styles.backdrop} onPress={onClose} />
 
-          <View style={s.header}>
-            <Text style={s.title}>Export data</Text>
-            <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={8}>
-              <Text style={s.closeBtnText}>✕</Text>
+      {/* KAV fills the screen, sheet sits at the bottom */}
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.background,
+              paddingBottom: bottomPad + 8,
+            },
+          ]}
+        >
+          <View style={[styles.handle, { backgroundColor: colors.hairline }]} />
+
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: colors.ink }]}>Export data</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: colors.backgroundSoft }]}
+              hitSlop={8}
+            >
+              <Text style={[styles.closeBtnText, { color: colors.ink }]}>✕</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={s.label}>Period</Text>
-          <View style={s.periodRow}>
+          <Text style={[styles.label, { color: colors.ink }]}>Period</Text>
+          <View style={styles.periodRow}>
             {(["week", "month", "year", "custom"] as Period[]).map((p) => (
               <TouchableOpacity
                 key={p}
-                style={[s.periodBtn, period === p && s.periodBtnActive]}
+                style={[
+                  styles.periodBtn,
+                  { borderColor: colors.hairline },
+                  period === p && { backgroundColor: colors.ink, borderColor: colors.ink },
+                ]}
                 onPress={() => setPeriod(p)}
               >
                 <Text
                   style={[
-                    s.periodBtnText,
-                    period === p && s.periodBtnTextActive,
+                    styles.periodBtnText,
+                    { color: colors.body },
+                    period === p && { color: colors.background },
                   ]}
                 >
                   {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -134,11 +170,14 @@ export default function ExportModal({ visible, onClose }: Props) {
           </View>
 
           {period === "custom" ? (
-            <View style={s.rangeRow}>
-              <View style={s.dateField}>
-                <Text style={s.dateLabel}>From</Text>
+            <View style={styles.rangeRow}>
+              <View style={styles.dateField}>
+                <Text style={[styles.dateLabel, { color: colors.body }]}>From</Text>
                 <TextInput
-                  style={s.dateInput}
+                  style={[
+                    styles.dateInput,
+                    { backgroundColor: colors.backgroundSoft, color: colors.ink },
+                  ]}
                   value={customStart}
                   onChangeText={setCustomStart}
                   placeholder="YYYY-MM-DD"
@@ -146,11 +185,14 @@ export default function ExportModal({ visible, onClose }: Props) {
                   keyboardType="numbers-and-punctuation"
                 />
               </View>
-              <Text style={s.dateSep}>–</Text>
-              <View style={s.dateField}>
-                <Text style={s.dateLabel}>To</Text>
+              <Text style={[styles.dateSep, { color: colors.mute }]}>–</Text>
+              <View style={styles.dateField}>
+                <Text style={[styles.dateLabel, { color: colors.body }]}>To</Text>
                 <TextInput
-                  style={s.dateInput}
+                  style={[
+                    styles.dateInput,
+                    { backgroundColor: colors.backgroundSoft, color: colors.ink },
+                  ]}
                   value={customEnd}
                   onChangeText={setCustomEnd}
                   placeholder="YYYY-MM-DD"
@@ -160,19 +202,25 @@ export default function ExportModal({ visible, onClose }: Props) {
               </View>
             </View>
           ) : (
-            <View style={s.rangePreview}>
-              <Text style={s.rangeText}>
+            <View
+              style={[styles.rangePreview, { backgroundColor: colors.backgroundSoft }]}
+            >
+              <Text style={[styles.rangeText, { color: colors.body }]}>
                 {range.start} – {range.end}
               </Text>
             </View>
           )}
 
-          <Text style={s.hint}>
+          <Text style={[styles.hint, { color: colors.mute }]}>
             CSV columns: id, name, amount, category, description, date, tags.
           </Text>
 
           <TouchableOpacity
-            style={[s.exportBtn, exporting && s.exportBtnOff]}
+            style={[
+              styles.exportBtn,
+              { backgroundColor: colors.ink },
+              exporting && styles.exportBtnOff,
+            ]}
             onPress={handleExport}
             disabled={exporting}
             activeOpacity={0.8}
@@ -180,156 +228,94 @@ export default function ExportModal({ visible, onClose }: Props) {
             {exporting ? (
               <ActivityIndicator color={colors.background} />
             ) : (
-              <Text style={s.exportBtnText}>Export CSV</Text>
+              <Text style={[styles.exportBtnText, { color: colors.background }]}>
+                Export CSV
+              </Text>
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-function makeStyles(
-  c: ReturnType<typeof useTheme>["colors"],
-  bottomInset: number
-) {
-  return StyleSheet.create({
-    backdrop: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: "rgba(0,0,0,0.55)",
-    },
-    kav: {
-      flex: 1,
-      justifyContent: "flex-end",
-    },
-    sheet: {
-      backgroundColor: c.background,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      paddingHorizontal: 24,
-      paddingTop: 12,
-      paddingBottom: (bottomInset || 16) + 8,
-    },
-    handle: {
-      alignSelf: "center",
-      backgroundColor: c.hairline,
-      borderRadius: 999,
-      height: 4,
-      marginBottom: 16,
-      width: 40,
-    },
-    header: {
-      alignItems: "center",
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: 24,
-    },
-    title: {
-      color: c.ink,
-      fontFamily: "Inter-Bold",
-      fontSize: 20,
-    },
-    closeBtn: {
-      alignItems: "center",
-      backgroundColor: c.backgroundSoft,
-      borderRadius: 999,
-      height: 32,
-      justifyContent: "center",
-      width: 32,
-    },
-    closeBtnText: {
-      color: c.ink,
-      fontSize: 14,
-    },
-    label: {
-      color: c.ink,
-      fontFamily: "Inter-Medium",
-      fontSize: 14,
-      marginBottom: 12,
-    },
-    periodRow: {
-      flexDirection: "row",
-      gap: 8,
-      marginBottom: 20,
-    },
-    periodBtn: {
-      alignItems: "center",
-      borderColor: c.hairline,
-      borderRadius: 999,
-      borderWidth: 1,
-      flex: 1,
-      paddingVertical: 10,
-    },
-    periodBtnActive: {
-      backgroundColor: c.ink,
-      borderColor: c.ink,
-    },
-    periodBtnText: {
-      color: c.body,
-      fontFamily: "Inter-Medium",
-      fontSize: 13,
-    },
-    periodBtnTextActive: {
-      color: c.background,
-    },
-    rangeRow: {
-      alignItems: "center",
-      flexDirection: "row",
-      gap: 8,
-      marginBottom: 20,
-    },
-    dateField: { flex: 1 },
-    dateLabel: {
-      color: c.body,
-      fontFamily: "Inter",
-      fontSize: 12,
-      marginBottom: 6,
-    },
-    dateInput: {
-      backgroundColor: c.backgroundSoft,
-      borderRadius: 8,
-      color: c.ink,
-      fontFamily: "Inter",
-      fontSize: 14,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-    },
-    dateSep: {
-      color: c.mute,
-      fontSize: 16,
-      marginTop: 16,
-    },
-    rangePreview: {
-      backgroundColor: c.backgroundSoft,
-      borderRadius: 8,
-      marginBottom: 16,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-    },
-    rangeText: {
-      color: c.body,
-      fontFamily: "Inter-Medium",
-      fontSize: 14,
-      textAlign: "center",
-    },
-    hint: {
-      color: c.mute,
-      fontFamily: "Inter",
-      fontSize: 12,
-      lineHeight: 18,
-      marginBottom: 24,
-    },
-    exportBtn: {
-      alignItems: "center",
-      backgroundColor: c.ink,
-      borderRadius: 999,
-      paddingVertical: 16,
-    },
-    exportBtnOff: { opacity: 0.5 },
-    exportBtnText: {
-      color: c.background,
-      fontFamily: "Inter-Medium",
-      fontSize: 16,
-    },
-  });
-}
+const styles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  kav: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    flexShrink: 1,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+  },
+  handle: {
+    alignSelf: "center",
+    borderRadius: 999,
+    height: 4,
+    marginBottom: 16,
+    width: 40,
+  },
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  title: { fontFamily: "Inter-Bold", fontSize: 20 },
+  closeBtn: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  closeBtnText: { fontSize: 14 },
+  label: { fontFamily: "Inter-Medium", fontSize: 14, marginBottom: 12 },
+  periodRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
+  periodBtn: {
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 10,
+  },
+  periodBtnText: { fontFamily: "Inter-Medium", fontSize: 13 },
+  rangeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
+  dateField: { flex: 1 },
+  dateLabel: { fontFamily: "Inter", fontSize: 12, marginBottom: 6 },
+  dateInput: {
+    borderRadius: 8,
+    fontFamily: "Inter",
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateSep: { fontSize: 16, marginTop: 16 },
+  rangePreview: {
+    borderRadius: 8,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  rangeText: { fontFamily: "Inter-Medium", fontSize: 14, textAlign: "center" },
+  hint: { fontFamily: "Inter", fontSize: 12, lineHeight: 18, marginBottom: 24 },
+  exportBtn: {
+    alignItems: "center",
+    borderRadius: 999,
+    paddingVertical: 16,
+  },
+  exportBtnOff: { opacity: 0.5 },
+  exportBtnText: { fontFamily: "Inter-Medium", fontSize: 16 },
+});

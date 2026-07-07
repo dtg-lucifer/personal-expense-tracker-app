@@ -1,22 +1,27 @@
 /**
  * components/AddExpenseModal.tsx
  *
- * Bottom-sheet modal. The layout is:
+ * Correct bottom-sheet layout that actually opens and handles the keyboard:
+ *
  *   <Modal>
- *     <View flex:1>                        ← full-screen container
- *       <Pressable absoluteFill onPress=close />   ← backdrop (behind sheet)
- *       <KeyboardAvoidingView justifyContent=flex-end>
- *         <View sheet />
- *       </KeyboardAvoidingView>
- *     </View>
+ *     <Pressable absoluteFill />              ← backdrop, absolutely positioned
+ *     <KeyboardAvoidingView flex:1            ← MUST have flex:1 to have a measured
+ *                           justifyContent="flex-end">   height for KAV to work with
+ *       <View sheet flexShrink:1 maxHeight:92% />   ← flexShrink so it compresses
+ *         <ScrollView flexShrink:1 />               ← gives up space to keyboard
+ *     </KeyboardAvoidingView>
  *   </Modal>
  *
- * The backdrop is inside the same flex:1 container but rendered first (behind).
- * The KAV sits on top with pointerEvents="box-none" so touches pass through its
- * transparent area to the backdrop, while the sheet itself captures touches.
+ * Why the old code was broken:
+ * - KAV had no flex/height → no measured height → couldn't push anything
+ * - ScrollView flex:1 inside a parent with no height = collapses to 0
+ * - Only the handle + header rendered because those are fixed-height
  *
- * Keyboard: behavior="padding" on both platforms pushes the sheet up when the
- * keyboard appears. The ScrollView is flex:1 so it shrinks to fit.
+ * Keyboard behavior:
+ * - iOS:     behavior="padding"  — KAV adds bottom padding equal to keyboard height
+ * - Android: behavior="height"   — KAV shrinks its own height by keyboard height
+ * Both cause the sheet to move up. flexShrink:1 on sheet + ScrollView lets them
+ * compress gracefully without overflowing the screen.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -129,210 +134,242 @@ export default function AddExpenseModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      {/* Outer container fills the whole screen */}
-      <View style={styles.container}>
-        {/* Backdrop — sits behind everything, tapping it closes the modal */}
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      {/* Backdrop — absoluteFill so it doesn't participate in flex layout */}
+      <Pressable style={styles.backdrop} onPress={onClose} />
 
+      {/*
+        KAV needs flex:1 to have a real measured height. Without it, the KAV
+        has zero height and can't shift the sheet up when the keyboard opens.
+        justifyContent="flex-end" pins the sheet to the bottom.
+      */}
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
         {/*
-          KAV with pointerEvents="box-none": the KAV's own transparent area
-          doesn't eat touches (they fall through to the backdrop), but child
-          views (the sheet) still receive touches normally.
-          behavior="padding" lifts the sheet up when keyboard appears.
+          flexShrink:1 — the sheet sizes itself to its content but can compress
+          when KAV squeezes it. maxHeight caps it at 92% of the screen.
         */}
-        <KeyboardAvoidingView
-          style={styles.kav}
-          behavior="padding"
-          pointerEvents="box-none"
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.background,
+              paddingBottom: insets.bottom > 0 ? insets.bottom : 16,
+            },
+          ]}
         >
-          <View
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: colors.background,
-                paddingBottom: insets.bottom > 0 ? insets.bottom : 16,
-              },
-            ]}
-          >
-            {/* Handle */}
-            <View style={[styles.handle, { backgroundColor: colors.hairline }]} />
+          {/* Handle */}
+          <View style={[styles.handle, { backgroundColor: colors.hairline }]} />
 
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={[styles.title, { color: colors.ink }]}>
-                Log expense
-              </Text>
-              <TouchableOpacity
-                onPress={onClose}
-                style={[styles.closeBtn, { backgroundColor: colors.backgroundSoft }]}
-                hitSlop={8}
-              >
-                <Text style={[styles.closeBtnText, { color: colors.ink }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Scrollable form — flex:1 shrinks when KAV reduces available height */}
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              bounces={false}
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: colors.ink }]}>Log expense</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: colors.backgroundSoft }]}
+              hitSlop={8}
             >
-              <Field label="Name" error={errors.name} colors={colors}>
-                <TextInput
-                  style={[styles.input, {
+              <Text style={[styles.closeBtnText, { color: colors.ink }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/*
+            ScrollView flexShrink:1 — it gives up height first when the sheet
+            is compressed, keeping the header always visible. All fields remain
+            reachable by scrolling.
+          */}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
+          >
+            <Field label="Name" error={errors.name} colors={colors}>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
                     backgroundColor: colors.backgroundSoft,
                     color: colors.ink,
                     borderColor: errors.name ? "#dc2626" : "transparent",
                     borderWidth: 1,
-                  }]}
-                  placeholder="e.g. Coffee"
-                  placeholderTextColor={colors.mute}
-                  value={name}
-                  onChangeText={setName}
-                  returnKeyType="next"
-                  onSubmitEditing={() => amountRef.current?.focus()}
-                />
-              </Field>
+                  },
+                ]}
+                placeholder="e.g. Coffee"
+                placeholderTextColor={colors.mute}
+                value={name}
+                onChangeText={setName}
+                returnKeyType="next"
+                onSubmitEditing={() => amountRef.current?.focus()}
+              />
+            </Field>
 
-              <Field label="Amount" error={errors.amount} colors={colors}>
-                <TextInput
-                  ref={amountRef}
-                  style={[styles.input, {
+            <Field label="Amount" error={errors.amount} colors={colors}>
+              <TextInput
+                ref={amountRef}
+                style={[
+                  styles.input,
+                  {
                     backgroundColor: colors.backgroundSoft,
                     color: colors.ink,
                     borderColor: errors.amount ? "#dc2626" : "transparent",
                     borderWidth: 1,
-                  }]}
-                  placeholder="0.00"
-                  placeholderTextColor={colors.mute}
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="decimal-pad"
-                  returnKeyType="done"
-                />
-              </Field>
+                  },
+                ]}
+                placeholder="0.00"
+                placeholderTextColor={colors.mute}
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+              />
+            </Field>
 
-              <Field label="Category" error={errors.category} colors={colors}>
-                <TouchableOpacity
-                  style={[styles.input, styles.pickerRow, {
+            <Field label="Category" error={errors.category} colors={colors}>
+              <TouchableOpacity
+                style={[
+                  styles.input,
+                  styles.pickerRow,
+                  {
                     backgroundColor: colors.backgroundSoft,
                     borderColor: errors.category ? "#dc2626" : "transparent",
                     borderWidth: 1,
-                  }]}
-                  onPress={() => setShowCategoryPicker((v) => !v)}
-                  activeOpacity={0.7}
-                >
-                  {selectedCategory && (
-                    <View style={[styles.dot, { backgroundColor: selectedCategory.color }]} />
-                  )}
-                  <Text style={[styles.pickerText, { color: colors.ink }]}>
-                    {selectedCategory?.name ?? "Select category"}
-                  </Text>
-                  <Text style={[styles.chevron, { color: colors.body }]}>
-                    {showCategoryPicker ? "▲" : "▼"}
-                  </Text>
-                </TouchableOpacity>
+                  },
+                ]}
+                onPress={() => setShowCategoryPicker((v) => !v)}
+                activeOpacity={0.7}
+              >
+                {selectedCategory && (
+                  <View
+                    style={[styles.dot, { backgroundColor: selectedCategory.color }]}
+                  />
+                )}
+                <Text style={[styles.pickerText, { color: colors.ink }]}>
+                  {selectedCategory?.name ?? "Select category"}
+                </Text>
+                <Text style={[styles.chevron, { color: colors.body }]}>
+                  {showCategoryPicker ? "▲" : "▼"}
+                </Text>
+              </TouchableOpacity>
 
-                {showCategoryPicker && (
-                  <View style={[styles.dropList, {
-                    backgroundColor: colors.background,
-                    borderColor: colors.hairline,
-                  }]}>
-                    {categories.map((cat) => (
-                      <TouchableOpacity
-                        key={cat.id}
+              {showCategoryPicker && (
+                <View
+                  style={[
+                    styles.dropList,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.hairline,
+                    },
+                  ]}
+                >
+                  {categories.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[
+                        styles.dropItem,
+                        { borderBottomColor: colors.backgroundSoft },
+                        cat.id === categoryId && {
+                          backgroundColor: colors.backgroundSofter,
+                        },
+                      ]}
+                      onPress={() => {
+                        setCategoryId(cat.id);
+                        setShowCategoryPicker(false);
+                      }}
+                    >
+                      <View style={[styles.dot, { backgroundColor: cat.color }]} />
+                      <Text
                         style={[
-                          styles.dropItem,
-                          { borderBottomColor: colors.backgroundSoft },
-                          cat.id === categoryId && { backgroundColor: colors.backgroundSofter },
-                        ]}
-                        onPress={() => {
-                          setCategoryId(cat.id);
-                          setShowCategoryPicker(false);
-                        }}
-                      >
-                        <View style={[styles.dot, { backgroundColor: cat.color }]} />
-                        <Text style={[
                           styles.dropItemText,
                           { color: colors.ink },
                           cat.id === categoryId && { fontFamily: "Inter-Medium" },
-                        ]}>
-                          {cat.name}
-                        </Text>
-                        {cat.id === categoryId && (
-                          <Text style={[styles.check, { color: colors.ink }]}>✓</Text>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </Field>
+                        ]}
+                      >
+                        {cat.name}
+                      </Text>
+                      {cat.id === categoryId && (
+                        <Text style={[styles.check, { color: colors.ink }]}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </Field>
 
-              <Field label="Description (optional)" colors={colors}>
-                <TextInput
-                  style={[styles.input, styles.multiline, {
+            <Field label="Description (optional)" colors={colors}>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.multiline,
+                  {
                     backgroundColor: colors.backgroundSoft,
                     color: colors.ink,
                     borderColor: "transparent",
                     borderWidth: 1,
-                  }]}
-                  placeholder="Add notes…"
-                  placeholderTextColor={colors.mute}
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                  numberOfLines={3}
-                />
-              </Field>
+                  },
+                ]}
+                placeholder="Add notes…"
+                placeholderTextColor={colors.mute}
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={3}
+              />
+            </Field>
 
-              <Field label="Date" error={errors.date} colors={colors}>
-                <TextInput
-                  style={[styles.input, {
+            <Field label="Date" error={errors.date} colors={colors}>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
                     backgroundColor: colors.backgroundSoft,
                     color: colors.ink,
                     borderColor: errors.date ? "#dc2626" : "transparent",
                     borderWidth: 1,
-                  }]}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.mute}
-                  value={date}
-                  onChangeText={setDate}
-                  keyboardType="numbers-and-punctuation"
-                />
-              </Field>
+                  },
+                ]}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.mute}
+                value={date}
+                onChangeText={setDate}
+                keyboardType="numbers-and-punctuation"
+              />
+            </Field>
 
-              <Field label="Tags (space-separated, optional)" colors={colors}>
-                <TextInput
-                  style={[styles.input, {
+            <Field label="Tags (space-separated, optional)" colors={colors}>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
                     backgroundColor: colors.backgroundSoft,
                     color: colors.ink,
                     borderColor: "transparent",
                     borderWidth: 1,
-                  }]}
-                  placeholder="e.g. lunch work"
-                  placeholderTextColor={colors.mute}
-                  value={tags}
-                  onChangeText={setTags}
-                  autoCapitalize="none"
-                  returnKeyType="done"
-                />
-              </Field>
+                  },
+                ]}
+                placeholder="e.g. lunch work"
+                placeholderTextColor={colors.mute}
+                value={tags}
+                onChangeText={setTags}
+                autoCapitalize="none"
+                returnKeyType="done"
+              />
+            </Field>
 
-              <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: colors.ink }]}
-                onPress={handleSubmit}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.submitBtnText, { color: colors.background }]}>
-                  Save expense
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
+            <TouchableOpacity
+              style={[styles.submitBtn, { backgroundColor: colors.ink }]}
+              onPress={handleSubmit}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.submitBtnText, { color: colors.background }]}>
+                Save expense
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -362,19 +399,21 @@ function Field({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  // Full-screen container — backdrop is absolute inside this
-  container: {
-    flex: 1,
+  // Backdrop is absolutely positioned — doesn't participate in flex layout
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  // KAV fills the entire screen and pins children to the bottom
+  kav: {
+    flex: 1,
     justifyContent: "flex-end",
   },
-  // KAV itself is not full-height — it wraps only the sheet
-  kav: {
-    // no flex:1 here — we want it to hug the sheet at the bottom
-  },
+  // Sheet sizes to its content but can compress when keyboard appears
   sheet: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    flexShrink: 1,
     maxHeight: "92%",
     paddingHorizontal: 24,
     paddingTop: 12,
@@ -401,7 +440,8 @@ const styles = StyleSheet.create({
     width: 32,
   },
   closeBtnText: { fontSize: 14 },
-  scroll: { flex: 1 },
+  // flexShrink:1 — ScrollView compresses when sheet is squeezed by keyboard
+  scroll: { flexShrink: 1 },
   scrollContent: { paddingBottom: 24 },
   input: {
     borderRadius: 8,

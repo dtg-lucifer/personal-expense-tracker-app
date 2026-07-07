@@ -1,9 +1,17 @@
 /**
  * components/CategoryManager.tsx
  *
- * Dark-mode aware. Add/edit category bottom sheet with proper keyboard handling.
- * Uses KeyboardAvoidingView behavior="padding" + flex:1 ScrollView so the form
- * is never hidden behind the keyboard on Android or iOS.
+ * Category list + add/edit bottom-sheet modal.
+ * Modal layout uses the same correct pattern as AddExpenseModal:
+ *
+ *   <Modal>
+ *     <Pressable absoluteFill />              ← backdrop
+ *     <KeyboardAvoidingView flex:1            ← needs flex:1 to have measured height
+ *                           justifyContent="flex-end">
+ *       <View sheet flexShrink:1 maxHeight:90% />
+ *         <ScrollView flexShrink:1 />
+ *     </KeyboardAvoidingView>
+ *   </Modal>
  */
 
 import { useEffect, useState } from "react";
@@ -12,6 +20,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -75,6 +84,10 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
     setModalVisible(true);
   }
 
+  function closeModal() {
+    setModalVisible(false);
+  }
+
   function handleSave() {
     const t = name.trim();
     if (!t) {
@@ -84,7 +97,7 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
     try {
       if (editing) updateCategory(editing.id, t, color);
       else insertCategory(t, color);
-      setModalVisible(false);
+      closeModal();
       load();
       onCategoriesChanged?.();
     } catch {
@@ -142,27 +155,19 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
           keyExtractor={(item) => String(item.id)}
           ItemSeparatorComponent={() => (
             <View
-              style={[
-                styles.sep,
-                { backgroundColor: colors.hairline, marginLeft: 16 },
-              ]}
+              style={[styles.sep, { backgroundColor: colors.hairline, marginLeft: 16 }]}
             />
           )}
           renderItem={({ item }) => (
             <View style={styles.row}>
-              <View
-                style={[styles.swatch, { backgroundColor: item.color }]}
-              />
+              <View style={[styles.swatch, { backgroundColor: item.color }]} />
               <View style={styles.rowBody}>
                 <Text style={[styles.catName, { color: colors.ink }]}>
                   {item.name}
                 </Text>
                 {item.is_predefined === 1 && (
                   <View
-                    style={[
-                      styles.badge,
-                      { backgroundColor: colors.backgroundSoft },
-                    ]}
+                    style={[styles.badge, { backgroundColor: colors.backgroundSoft }]}
                   >
                     <Text style={[styles.badgeText, { color: colors.mute }]}>
                       built-in
@@ -174,27 +179,17 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
                 <View style={styles.actions}>
                   <TouchableOpacity
                     onPress={() => openEdit(item)}
-                    style={[
-                      styles.actionBtn,
-                      { backgroundColor: colors.backgroundSoft },
-                    ]}
+                    style={[styles.actionBtn, { backgroundColor: colors.backgroundSoft }]}
                     hitSlop={4}
                   >
-                    <Text style={[styles.actionText, { color: colors.ink }]}>
-                      ✎
-                    </Text>
+                    <Text style={[styles.actionText, { color: colors.ink }]}>✎</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => handleDelete(item)}
-                    style={[
-                      styles.actionBtn,
-                      { backgroundColor: colors.backgroundSoft },
-                    ]}
+                    style={[styles.actionBtn, { backgroundColor: colors.backgroundSoft }]}
                     hitSlop={4}
                   >
-                    <Text style={[styles.actionText, { color: colors.body }]}>
-                      ✕
-                    </Text>
+                    <Text style={[styles.actionText, { color: colors.body }]}>✕</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -209,16 +204,20 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
         animationType="slide"
         transparent
         statusBarTranslucent
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={closeModal}
       >
-        {/* Same structure as AddExpenseModal: container with backdrop + KAV on top */}
-        <View style={styles.container}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
-          <KeyboardAvoidingView
-            style={styles.kav}
-            behavior="padding"
-            pointerEvents="box-none"
-          >
+        {/* Backdrop — absoluteFill, outside the KAV so it doesn't affect layout */}
+        <Pressable style={styles.backdrop} onPress={closeModal} />
+
+        {/*
+          KAV must have flex:1 — this gives it a real measured height so it can
+          actually move its children up when the keyboard appears.
+          justifyContent="flex-end" keeps the sheet pinned to the bottom.
+        */}
+        <KeyboardAvoidingView
+          style={styles.kav}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View
             style={[
               styles.sheet,
@@ -229,9 +228,7 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
             ]}
           >
             {/* Handle */}
-            <View
-              style={[styles.handle, { backgroundColor: colors.hairline }]}
-            />
+            <View style={[styles.handle, { backgroundColor: colors.hairline }]} />
 
             {/* Header */}
             <View style={styles.modalHeader}>
@@ -239,31 +236,23 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
                 {editing ? "Edit category" : "New category"}
               </Text>
               <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={[
-                  styles.closeBtn,
-                  { backgroundColor: colors.backgroundSoft },
-                ]}
+                onPress={closeModal}
+                style={[styles.closeBtn, { backgroundColor: colors.backgroundSoft }]}
                 hitSlop={8}
               >
-                <Text style={[styles.closeBtnText, { color: colors.ink }]}>
-                  ✕
-                </Text>
+                <Text style={[styles.closeBtnText, { color: colors.ink }]}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Scrollable form body */}
+            {/* Scrollable form — flexShrink:1 compresses when keyboard appears */}
             <ScrollView
               style={styles.scroll}
-              contentContainerStyle={{ paddingBottom: 16 }}
+              contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               bounces={false}
             >
-              {/* Name input */}
-              <Text style={[styles.inputLabel, { color: colors.ink }]}>
-                Name
-              </Text>
+              <Text style={[styles.inputLabel, { color: colors.ink }]}>Name</Text>
               <TextInput
                 style={[
                   styles.input,
@@ -282,18 +271,14 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
                   setNameError("");
                 }}
                 returnKeyType="done"
+                onSubmitEditing={handleSave}
+                autoFocus={modalVisible}
               />
               {nameError ? (
                 <Text style={styles.errText}>{nameError}</Text>
               ) : null}
 
-              {/* Color picker */}
-              <Text
-                style={[
-                  styles.inputLabel,
-                  { color: colors.ink, marginTop: 20 },
-                ]}
-              >
+              <Text style={[styles.inputLabel, { color: colors.ink, marginTop: 20 }]}>
                 Color
               </Text>
               <View style={styles.colorGrid}>
@@ -303,10 +288,7 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
                     style={[
                       styles.colorDot,
                       { backgroundColor: c },
-                      color === c && [
-                        styles.colorSelected,
-                        { borderColor: colors.ink },
-                      ],
+                      color === c && [styles.colorSelected, { borderColor: colors.ink }],
                     ]}
                     onPress={() => setColor(c)}
                   />
@@ -315,10 +297,7 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
 
               {/* Preview */}
               <View
-                style={[
-                  styles.preview,
-                  { backgroundColor: colors.backgroundSoft },
-                ]}
+                style={[styles.preview, { backgroundColor: colors.backgroundSoft }]}
               >
                 <View style={[styles.swatch, { backgroundColor: color }]} />
                 <Text style={[styles.previewName, { color: colors.ink }]}>
@@ -326,22 +305,18 @@ export default function CategoryManager({ onCategoriesChanged }: Props) {
                 </Text>
               </View>
 
-              {/* Save button */}
               <TouchableOpacity
                 style={[styles.saveBtn, { backgroundColor: colors.ink }]}
                 onPress={handleSave}
                 activeOpacity={0.8}
               >
-                <Text
-                  style={[styles.saveBtnText, { color: colors.background }]}
-                >
+                <Text style={[styles.saveBtnText, { color: colors.background }]}>
                   Save
                 </Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
-        </View>
       </Modal>
     </View>
   );
@@ -355,11 +330,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { fontFamily: "Inter-Bold", fontSize: 18 },
-  addBtn: {
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
+  addBtn: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8 },
   addBtnText: { fontFamily: "Inter-Medium", fontSize: 14 },
   card: { borderRadius: 16, overflow: "hidden", borderWidth: 1 },
   sep: { height: 1 },
@@ -370,12 +341,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   swatch: { borderRadius: 999, height: 14, marginRight: 12, width: 14 },
-  rowBody: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  rowBody: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
   catName: { fontFamily: "Inter-Medium", fontSize: 15 },
   badge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   badgeText: { fontFamily: "Inter", fontSize: 10 },
@@ -388,18 +354,20 @@ const styles = StyleSheet.create({
     width: 32,
   },
   actionText: { fontSize: 14 },
-  // ── Modal ──────────────────────────────────
-  container: {
-    flex: 1,
+
+  // ── Modal ──────────────────────────────────────────────────────────────────
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
   },
   kav: {
-    // no flex:1 — hugs the sheet at the bottom
+    flex: 1,
+    justifyContent: "flex-end",
   },
   sheet: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    flexShrink: 1,
     maxHeight: "90%",
     paddingHorizontal: 24,
     paddingTop: 12,
@@ -426,8 +394,8 @@ const styles = StyleSheet.create({
     width: 32,
   },
   closeBtnText: { fontSize: 13 },
-  // flex:1 is the critical fix — allows scrollview to shrink with keyboard
-  scroll: { flex: 1 },
+  scroll: { flexShrink: 1 },
+  scrollContent: { paddingBottom: 16 },
   inputLabel: { fontFamily: "Inter-Medium", fontSize: 14, marginBottom: 8 },
   input: {
     borderRadius: 8,
@@ -436,12 +404,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  errText: {
-    color: "#dc2626",
-    fontFamily: "Inter",
-    fontSize: 12,
-    marginTop: 4,
-  },
+  errText: { color: "#dc2626", fontFamily: "Inter", fontSize: 12, marginTop: 4 },
   colorGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
