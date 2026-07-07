@@ -1,7 +1,3 @@
-/**
- * settings/export.tsx — Export page (inline, no modal needed here)
- */
-
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useState } from "react";
@@ -20,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import {
   exportExpensesToCSV,
+  exportFullBackup,
   getMonthRange,
   getWeekRange,
   getYearRange,
@@ -51,7 +48,7 @@ export default function ExportScreen() {
     return { start: customStart, end: customEnd };
   }
 
-  async function handleExport() {
+  async function handleExportCSV() {
     const { start, end } = getRange();
     if (period === "custom") {
       if (!start.match(/^\d{4}-\d{2}-\d{2}$/) || !end.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -81,6 +78,25 @@ export default function ExportScreen() {
     }
   }
 
+  async function handleExportBackup() {
+    setExporting(true);
+    try {
+      const json = exportFullBackup();
+      const file = new File(Paths.cache, `expense_tracker_backup.json`);
+      file.write(json);
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Export backup" });
+      } else {
+        Alert.alert("Exported", `Saved to:\n${file.uri}`);
+      }
+    } catch (e) {
+      Alert.alert("Export failed", String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const range = getRange();
 
   return (
@@ -93,11 +109,12 @@ export default function ExportScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ── CSV Export ───────────────────────────────────────────── */}
+        <Text style={[styles.sectionTitle, { color: colors.ink }]}>Export CSV</Text>
         <Text style={[styles.hint, { color: colors.body }]}>
           Choose a period and tap Export to share or save a CSV file.
         </Text>
 
-        {/* Period selector */}
         <Text style={[styles.label, { color: colors.ink }]}>Period</Text>
         <View
           style={[
@@ -117,7 +134,6 @@ export default function ExportScreen() {
                 onPress={() => setPeriod(p.value)}
                 activeOpacity={0.7}
               >
-                {/* Radio dot */}
                 <View
                   style={[
                     styles.radio,
@@ -145,13 +161,10 @@ export default function ExportScreen() {
           ))}
         </View>
 
-        {/* Custom range inputs */}
         {period === "custom" && (
           <View style={styles.customRow}>
             <View style={styles.dateField}>
-              <Text style={[styles.dateLabel, { color: colors.body }]}>
-                From
-              </Text>
+              <Text style={[styles.dateLabel, { color: colors.body }]}>From</Text>
               <TextInput
                 style={[
                   styles.dateInput,
@@ -164,7 +177,7 @@ export default function ExportScreen() {
                 keyboardType="numbers-and-punctuation"
               />
             </View>
-            <Text style={[styles.dateSep, { color: colors.mute }]}>–</Text>
+            <Text style={[styles.dateSep, { color: colors.mute }]}>-</Text>
             <View style={styles.dateField}>
               <Text style={[styles.dateLabel, { color: colors.body }]}>To</Text>
               <TextInput
@@ -182,31 +195,21 @@ export default function ExportScreen() {
           </View>
         )}
 
-        {/* Range preview */}
         {period !== "custom" && (
-          <View
-            style={[
-              styles.preview,
-              { backgroundColor: colors.backgroundSoft },
-            ]}
-          >
+          <View style={[styles.preview, { backgroundColor: colors.backgroundSoft }]}>
             <Text style={[styles.previewText, { color: colors.body }]}>
-              {range.start} – {range.end}
+              {range.start} - {range.end}
             </Text>
           </View>
         )}
-
-        <Text style={[styles.hint2, { color: colors.mute }]}>
-          Columns: id, name, amount, category, description, date, tags.
-        </Text>
 
         <TouchableOpacity
           style={[
             styles.exportBtn,
             { backgroundColor: colors.ink },
-            exporting && styles.exportBtnOff,
+            exporting && styles.btnDisabled,
           ]}
-          onPress={handleExport}
+          onPress={handleExportCSV}
           disabled={exporting}
           activeOpacity={0.8}
         >
@@ -218,6 +221,33 @@ export default function ExportScreen() {
             </Text>
           )}
         </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        {/* ── Full Backup Export ──────────────────────────────────── */}
+        <Text style={[styles.sectionTitle, { color: colors.ink }]}>Full backup</Text>
+        <Text style={[styles.hint, { color: colors.body }]}>
+          Export all your data (categories, expenses, goals, balance) as JSON.
+        </Text>
+
+        <TouchableOpacity
+          style={[
+            styles.exportBtn,
+            { backgroundColor: colors.ink },
+            exporting && styles.btnDisabled,
+          ]}
+          onPress={handleExportBackup}
+          disabled={exporting}
+          activeOpacity={0.8}
+        >
+          {exporting ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <Text style={[styles.exportBtnText, { color: colors.background }]}>
+              Export backup (JSON)
+            </Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -226,6 +256,7 @@ export default function ExportScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 60 },
+  sectionTitle: { fontFamily: "Inter-Bold", fontSize: 20, marginBottom: 8 },
   hint: { fontFamily: "Inter", fontSize: 14, lineHeight: 20, marginBottom: 24 },
   label: { fontFamily: "Inter-Medium", fontSize: 14, marginBottom: 10 },
   card: { borderRadius: 16, borderWidth: 1, marginBottom: 20, overflow: "hidden" },
@@ -270,17 +301,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   previewText: { fontFamily: "Inter-Medium", fontSize: 14, textAlign: "center" },
-  hint2: {
-    fontFamily: "Inter",
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 28,
-  },
   exportBtn: {
     alignItems: "center",
     borderRadius: 999,
     paddingVertical: 16,
   },
-  exportBtnOff: { opacity: 0.5 },
   exportBtnText: { fontFamily: "Inter-Medium", fontSize: 16 },
+  btnDisabled: { opacity: 0.5 },
+  divider: {
+    height: 1,
+    backgroundColor: "#e0e0e0",
+    marginVertical: 28,
+  },
 });

@@ -12,6 +12,7 @@ import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
 import { useCallback, useEffect, useState } from "react";
+import Svg, { Path } from "react-native-svg";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -42,6 +43,36 @@ import {
   type SavingsGoal,
   type SavingsPeriodType,
 } from "@/lib/database";
+
+// ─── SVG Icons ─────────────────────────────────────────────────────────────────
+
+function PencilIcon({ size = 16 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+        stroke="#fff"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function TrashIcon({ size = 16 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+        stroke="#fff"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -182,7 +213,7 @@ function GoalModal({ visible, goal, onClose, onSaved }: GoalModalProps) {
               style={[gStyles.closeBtn, { backgroundColor: colors.backgroundSoft }]}
               hitSlop={8}
             >
-              <Text style={[gStyles.closeBtnText, { color: colors.ink }]}>✕</Text>
+              <Text style={[gStyles.closeBtnText, { color: colors.ink }]}>X</Text>
             </TouchableOpacity>
           </View>
 
@@ -574,27 +605,27 @@ export default function SavingsScreen() {
                           )}
                         </View>
                         <Text style={[styles.goalRowMeta, { color: colors.mute }]}>
-                          {g.period_type} · ₹{g.target_amount.toFixed(0)} · {Math.round(pct * 100)}%{met ? " ✓" : ""}
+                          {g.period_type} · ₹{g.target_amount.toFixed(0)} · {Math.round(pct * 100)}%{met ? " met" : ""}
                         </Text>
                       </View>
                       <View style={styles.goalRowActions}>
                         <TouchableOpacity
-                          style={[styles.actionBtn, { backgroundColor: colors.backgroundSoft }, (isActive && isLocked) && styles.actionBtnDisabled]}
+                          style={[styles.actionEditBtn, (isActive && isLocked) && styles.actionBtnDisabled]}
                           onPress={() => {
                             if (isActive && isLocked) return;
                             setEditingGoal(g); setGoalModalVisible(true);
                           }}
                         >
-                          <Text style={styles.actionBtnIcon}>✏️</Text>
+                          <PencilIcon size={16} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.actionBtn, styles.actionBtnDelete, (isActive && isLocked) && styles.actionBtnDisabled]}
+                          style={[styles.actionDeleteBtn, (isActive && isLocked) && styles.actionBtnDisabled]}
                           onPress={() => {
                             if (isActive && isLocked) return;
                             handleDeleteGoal(g.id);
                           }}
                         >
-                          <Text style={styles.actionBtnIcon}>🗑</Text>
+                          <TrashIcon size={16} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -731,9 +762,21 @@ const styles = StyleSheet.create({
   },
   activePillText: { color: "#16a34a", fontFamily: "Inter-Medium", fontSize: 10, lineHeight: 14 },
   goalRowActions: { flexDirection: "row", gap: 8, marginLeft: 12, alignItems: "center" },
-  actionBtn: { alignItems: "center", borderRadius: 999, height: 36, justifyContent: "center", width: 36 },
-  actionBtnDelete: { backgroundColor: "#fee2e2" },
+  actionEditBtn: {
+    alignItems: "center",
+    backgroundColor: "#374151",
+    borderRadius: 999,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  actionDeleteBtn: {
+    alignItems: "center",
+    backgroundColor: "#dc2626",
+    borderRadius: 999,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
   actionBtnDisabled: { opacity: 0.35 },
-  actionBtnIcon: { fontSize: 16 },
-  actionBtnText: { fontFamily: "Inter-Medium", fontSize: 12 },
 });

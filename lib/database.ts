@@ -107,35 +107,44 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 export function initDatabase(): void {
   const db = getDatabase();
 
-  // WAL mode for better concurrency
-  db.execSync("PRAGMA journal_mode = WAL;");
-  db.execSync("PRAGMA foreign_keys = ON;");
+  try {
+    db.execSync("PRAGMA journal_mode = WAL;");
+    db.execSync("PRAGMA foreign_keys = ON;");
+  } catch {
+    // Pragmas are best-effort
+  }
 
-  // Categories table
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS categories (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      name        TEXT    NOT NULL UNIQUE,
-      color       TEXT    NOT NULL DEFAULT '#AEB6BF',
-      is_predefined INTEGER NOT NULL DEFAULT 0,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
+  try {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL UNIQUE,
+        color       TEXT    NOT NULL DEFAULT '#AEB6BF',
+        is_predefined INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  } catch {
+    // Table already exists — safe to ignore
+  }
 
-  // Expenses table — with `type` column (expense | gain)
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS expenses (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      name        TEXT    NOT NULL,
-      amount      REAL    NOT NULL,
-      category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE SET NULL,
-      description TEXT    NOT NULL DEFAULT '',
-      date        TEXT    NOT NULL,
-      tags        TEXT    NOT NULL DEFAULT '',
-      type        TEXT    NOT NULL DEFAULT 'expense',
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
+  try {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        amount      REAL    NOT NULL,
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE SET NULL,
+        description TEXT    NOT NULL DEFAULT '',
+        date        TEXT    NOT NULL,
+        tags        TEXT    NOT NULL DEFAULT '',
+        type        TEXT    NOT NULL DEFAULT 'expense',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  } catch {
+    // Table already exists — safe to ignore
+  }
 
   // Migrate existing rows that don't have the type column yet
   try {
@@ -144,48 +153,61 @@ export function initDatabase(): void {
     // Column already exists — safe to ignore
   }
 
-  // Index for fast date-range queries
-  db.execSync(
-    "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);"
-  );
-  db.execSync(
-    "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);"
-  );
-
-  // Budget balance table — stores a single running balance value
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS budget_balance (
-      id     INTEGER PRIMARY KEY AUTOINCREMENT,
-      amount REAL    NOT NULL DEFAULT 0,
-      set_at TEXT    NOT NULL DEFAULT (datetime('now'))
+  try {
+    db.execSync(
+      "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);"
     );
-  `);
-
-  // Savings goals table
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS savings_goals (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      title         TEXT    NOT NULL,
-      target_amount REAL    NOT NULL,
-      period_type   TEXT    NOT NULL DEFAULT 'monthly',
-      start_date    TEXT    NOT NULL,
-      end_date      TEXT    NOT NULL,
-      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    db.execSync(
+      "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);"
     );
-  `);
+  } catch {
+    // Indexes already exist — safe to ignore
+  }
+
+  try {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS budget_balance (
+        id     INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount REAL    NOT NULL DEFAULT 0,
+        set_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  } catch {
+    // Table already exists — safe to ignore
+  }
+
+  try {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS savings_goals (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        title         TEXT    NOT NULL,
+        target_amount REAL    NOT NULL,
+        period_type   TEXT    NOT NULL DEFAULT 'monthly',
+        start_date    TEXT    NOT NULL,
+        end_date      TEXT    NOT NULL,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  } catch {
+    // Table already exists — safe to ignore
+  }
 
   // Seed predefined categories if the table is empty
-  const count = db.getFirstSync<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM categories;"
-  );
-  if (count && count.n === 0) {
-    const insertCat = db.prepareSync(
-      "INSERT OR IGNORE INTO categories (name, color, is_predefined) VALUES (?, ?, 1);"
+  try {
+    const count = db.getFirstSync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM categories;"
     );
-    for (const cat of PREDEFINED_CATEGORIES) {
-      insertCat.executeSync([cat.name, cat.color]);
+    if (count && count.n === 0) {
+      const insertCat = db.prepareSync(
+        "INSERT OR IGNORE INTO categories (name, color, is_predefined) VALUES (?, ?, 1);"
+      );
+      for (const cat of PREDEFINED_CATEGORIES) {
+        insertCat.executeSync([cat.name, cat.color]);
+      }
+      insertCat.finalizeSync();
     }
-    insertCat.finalizeSync();
+  } catch {
+    // Seeding is best-effort
   }
 }
 
@@ -746,4 +768,102 @@ export function exportExpensesToCSV(start: string, end: string): string {
     ].join(",");
   });
   return [header, ...lines].join("\n");
+}
+
+// ─── Full backup (JSON) ───────────────────────────────────────────────────────
+
+export interface FullBackup {
+  version: 1;
+  exported_at: string;
+  categories: Category[];
+  expenses: Expense[];
+  budget_balance: BudgetBalance | null;
+  savings_goals: SavingsGoal[];
+}
+
+export function exportFullBackup(): string {
+  const db = getDatabase();
+  const backup: FullBackup = {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    categories: db.getAllSync<Category>("SELECT * FROM categories;"),
+    expenses: db.getAllSync<Expense>("SELECT * FROM expenses ORDER BY id;"),
+    budget_balance: getBudgetBalance(),
+    savings_goals: db.getAllSync<SavingsGoal>(
+      "SELECT * FROM savings_goals ORDER BY id;"
+    ),
+  };
+  return JSON.stringify(backup, null, 2);
+}
+
+export function importFullBackup(json: string): void {
+  const backup: FullBackup = JSON.parse(json);
+  if (!backup || backup.version !== 1) {
+    throw new Error("Invalid backup file");
+  }
+
+  const db = getDatabase();
+
+  // Clear existing data (order matters for FK constraints)
+  db.execSync("DELETE FROM expenses;");
+  db.execSync("DELETE FROM savings_goals;");
+  db.execSync("DELETE FROM budget_balance;");
+  db.execSync("DELETE FROM categories;");
+
+  // Re-insert categories
+  const insertCat = db.prepareSync(
+    "INSERT INTO categories (id, name, color, is_predefined, created_at) VALUES (?, ?, ?, ?, ?);"
+  );
+  for (const c of backup.categories) {
+    insertCat.executeSync([c.id, c.name, c.color, c.is_predefined, c.created_at]);
+  }
+  insertCat.finalizeSync();
+
+  // Re-insert expenses
+  const insertExp = db.prepareSync(
+    "INSERT INTO expenses (id, name, amount, category_id, description, date, tags, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);"
+  );
+  for (const e of backup.expenses) {
+    insertExp.executeSync([
+      e.id,
+      e.name,
+      e.amount,
+      e.category_id,
+      e.description,
+      e.date,
+      e.tags,
+      e.type,
+      e.created_at,
+    ]);
+  }
+  insertExp.finalizeSync();
+
+  // Re-insert budget balance
+  if (backup.budget_balance) {
+    db.runSync(
+      "INSERT INTO budget_balance (id, amount, set_at) VALUES (?, ?, ?);",
+      [
+        backup.budget_balance.id,
+        backup.budget_balance.amount,
+        backup.budget_balance.set_at,
+      ]
+    );
+  }
+
+  // Re-insert savings goals
+  const insertGoal = db.prepareSync(
+    "INSERT INTO savings_goals (id, title, target_amount, period_type, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?);"
+  );
+  for (const g of backup.savings_goals) {
+    insertGoal.executeSync([
+      g.id,
+      g.title,
+      g.target_amount,
+      g.period_type,
+      g.start_date,
+      g.end_date,
+      g.created_at,
+    ]);
+  }
+  insertGoal.finalizeSync();
 }

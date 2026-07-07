@@ -31,6 +31,7 @@ import AddExpenseModal from "@/components/AddExpenseModal";
 import { BudgetLineChart } from "@/components/ExpenseChart";
 import ExpenseList from "@/components/ExpenseList";
 import { useTheme } from "@/context/ThemeContext";
+import { formatDateShort } from "@/lib/dateUtils";
 import {
   getBalanceOverTime,
   getBudgetBalance,
@@ -48,10 +49,7 @@ import {
 const TAB_BAR_HEIGHT = 60;
 
 function shortDay(date: string): string {
-  return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-  });
+  return formatDateShort(date);
 }
 
 // ─── Set Balance Modal ────────────────────────────────────────────────────────

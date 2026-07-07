@@ -9,8 +9,8 @@
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Home, Wallet2, PiggyBankIcon, ChartBar, Settings2 } from "lucide-react-native"
 
 import { useTheme } from "@/context/ThemeContext";
 
@@ -19,15 +19,15 @@ import { useTheme } from "@/context/ThemeContext";
 
 const ICONS = {
   // Home — house shape
-  home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
-  // Budget — credit card
-  budget: "M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z",
+  home: Home,
+  // Budget — wallet
+  budget: Wallet2,
   // Savings — piggy bank approximation (wallet)
-  savings: "M21 7.28V5c0-1.1-.9-2-2-2H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-2.28A2 2 0 0 0 22 15v-6a2 2 0 0 0-1-1.72zM20 15h-8v-4h8v4zM5 19V5h14v2h-6c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h6v2H5z M16 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
+  savings: PiggyBankIcon,
   // Reports — bar chart
-  reports: "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z",
+  reports: ChartBar,
   // Settings — gear
-  settings: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z",
+  settings: Settings2,
 } as const;
 
 type IconName = keyof typeof ICONS;
@@ -51,9 +51,10 @@ function TabIcon({
         focused && { backgroundColor: colors.isDark ? "#ffffff18" : "#00000010" },
       ]}
     >
-      <Svg width={24} height={24} viewBox="0 0 24 24" fill={color}>
-        <Path d={ICONS[name]} fill={color} />
-      </Svg>
+      {React.createElement(ICONS[name], {
+        size: 20,
+        color: color,
+      })}
     </View>
   );
 }

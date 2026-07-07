@@ -445,69 +445,57 @@ export default function ReportsScreen() {
           )}
         </View>
 
-        {/* ── Budget summary (current month) ──────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={S.sectionTitle}>Budget · this month</Text>
-          <View style={[styles.budgetCard, { backgroundColor: "#000" }]}>
-            <Text style={styles.budgetCardLabel}>CURRENT BALANCE</Text>
-            <Text style={styles.budgetCardAmount}>₹{budgetCurrentBalance.toFixed(2)}</Text>
-            <View style={styles.budgetCardRow}>
-              <View style={styles.budgetCardStat}>
-                <Text style={styles.budgetCardStatLabel}>Starting</Text>
-                <Text style={styles.budgetCardStatValue}>₹{budgetBalance.toFixed(2)}</Text>
-              </View>
-              <View style={styles.budgetCardStat}>
-                <Text style={styles.budgetCardStatLabel}>Expenses</Text>
-                <Text style={[styles.budgetCardStatValue, { color: "#f87171" }]}>−₹{monthExpenses.toFixed(2)}</Text>
-              </View>
-              <View style={styles.budgetCardStat}>
-                <Text style={styles.budgetCardStatLabel}>Gains</Text>
-                <Text style={[styles.budgetCardStatValue, { color: "#4ade80" }]}>+₹{monthGains.toFixed(2)}</Text>
-              </View>
+        {/* ── Unified budget card ──────────────────────────────────────── */}
+        <View style={styles.unifiedCard}>
+          <View style={styles.unifiedHalf}>
+            <View style={styles.unifiedRow}>
+              <Text style={styles.unifiedBalance}>₹{budgetCurrentBalance.toFixed(2)}</Text>
+            </View>
+            <View style={styles.unifiedRow}>
+              <Text style={styles.unifiedStarting}>Starting: ₹{budgetBalance.toFixed(2)}</Text>
+            </View>
+          </View>
+          <View style={styles.unifiedDivider} />
+          <View style={styles.unifiedHalf}>
+            <View style={styles.unifiedStatRow}>
+              <Text style={styles.unifiedStatLabel}>Expenses</Text>
+              <Text style={[styles.unifiedStatValue, { color: "#f87171" }]}>−₹{monthExpenses.toFixed(2)}</Text>
+            </View>
+            <View style={styles.unifiedStatRow}>
+              <Text style={styles.unifiedStatLabel}>Gains</Text>
+              <Text style={[styles.unifiedStatValue, { color: "#4ade80" }]}>+₹{monthGains.toFixed(2)}</Text>
             </View>
           </View>
         </View>
 
-        {/* ── Active savings goal ──────────────────────────────────────── */}
+        {/* ── Compact savings card ──────────────────────────────────────── */}
         {activeSavingsGoal && (() => {
           const target = activeSavingsGoal.target_amount;
           const isMet = savingsNet >= target;
           const pct = target > 0 ? Math.min(1, Math.max(0, savingsNet / target)) : 0;
           const remaining = target - savingsNet;
           return (
-            <View style={styles.section}>
-              <Text style={S.sectionTitle}>Savings · {activeSavingsGoal.title}</Text>
-              <View style={[styles.savingsCard, { backgroundColor: colors.backgroundSoft }]}>
-                {/* Status text */}
-                <Text style={[styles.savingsStatus, { color: isMet ? "#16a34a" : "#dc2626" }]}>
+            <View style={[styles.compactSavingsCard, { backgroundColor: colors.backgroundSoft }]}>
+              <View style={styles.compactSavingsRow}>
+                <Text style={[styles.savingsStatusText, { color: isMet ? "#16a34a" : "#dc2626" }]}>
                   {isMet
-                    ? `+₹${(savingsNet - target).toFixed(2)} extra saved 🎉`
+                    ? `+₹${(savingsNet - target).toFixed(2)} extra saved`
                     : `₹${remaining.toFixed(2)} more to save`}
                 </Text>
-                {/* Progress bar */}
-                <View style={[styles.savingsBarBg, { backgroundColor: colors.hairline }]}>
-                  <View
-                    style={[
-                      styles.savingsBarFill,
-                      {
-                        width: `${Math.round(pct * 100)}%` as any,
-                        backgroundColor: isMet ? "#16a34a" : colors.ink,
-                      },
-                    ]}
-                  />
-                </View>
-                {/* Labels */}
-                <View style={styles.savingsLabelRow}>
-                  <Text style={[styles.savingsLabel, { color: colors.body }]}>
-                    Saved: ₹{Math.max(0, savingsNet).toFixed(2)}
-                  </Text>
-                  <Text style={[styles.savingsLabel, { color: colors.body }]}>
-                    Target: ₹{target.toFixed(2)}  ({Math.round(pct * 100)}%)
-                  </Text>
-                </View>
-                <Text style={[styles.savingsMeta, { color: colors.mute }]}>
-                  {activeSavingsGoal.period_type} · ends {formatDate(activeSavingsGoal.end_date)}
+                <Text style={[styles.savingsPct, { color: colors.mute }]}>
+                  {Math.round(pct * 100)}%
                 </Text>
+              </View>
+              <View style={[styles.savingsMiniBarBg, { backgroundColor: colors.hairline }]}>
+                <View
+                  style={[
+                    styles.savingsMiniBarFill,
+                    {
+                      width: `${Math.round(pct * 100)}%` as any,
+                      backgroundColor: isMet ? "#16a34a" : colors.ink,
+                    },
+                  ]}
+                />
               </View>
             </View>
           );
@@ -692,47 +680,82 @@ const styles = StyleSheet.create({
   breakdownRight: { alignItems: "flex-end" },
   barFill: { borderRadius: 999, height: 3 },
 
-  // Budget card
-  budgetCard: {
+  // Unified budget card
+  unifiedCard: {
+    alignItems: "center",
+    backgroundColor: "#000",
     borderRadius: 16,
-    padding: 20,
+    flexDirection: "row",
+    marginBottom: 12,
+    padding: 16,
   },
-  budgetCardLabel: {
-    color: "#afafaf",
-    fontFamily: "Inter-Medium",
-    fontSize: 10,
-    letterSpacing: 0.8,
-    marginBottom: 6,
+  unifiedHalf: {
+    flex: 1,
+    justifyContent: "space-evenly",
   },
-  budgetCardAmount: {
+  unifiedRow: {
+    height: 36,
+    justifyContent: "center",
+  },
+  unifiedBalance: {
     color: "#fff",
     fontFamily: "Inter-Bold",
-    fontSize: 32,
-    marginBottom: 16,
+    fontSize: 28,
   },
-  budgetCardRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  budgetCardStat: { alignItems: "flex-start" },
-  budgetCardStatLabel: {
+  unifiedStarting: {
     color: "#afafaf",
     fontFamily: "Inter",
-    fontSize: 11,
-    marginBottom: 2,
+    fontSize: 12,
   },
-  budgetCardStatValue: {
-    color: "#fff",
+  unifiedDivider: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    height: 80,
+    marginHorizontal: 16,
+    width: 1,
+  },
+  unifiedStatRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    height: 36,
+    justifyContent: "space-between",
+  },
+  unifiedStatLabel: {
+    color: "#afafaf",
+    fontFamily: "Inter-Medium",
+    fontSize: 13,
+  },
+  unifiedStatValue: {
     fontFamily: "Inter-Bold",
-    fontSize: 14,
+    fontSize: 15,
   },
 
-  // Savings card
-  savingsCard: { borderRadius: 16, padding: 20 },
-  savingsStatus: { fontFamily: "Inter-Bold", fontSize: 20, marginBottom: 14 },
-  savingsBarBg: { borderRadius: 999, height: 8, overflow: "hidden", marginBottom: 8 },
-  savingsBarFill: { borderRadius: 999, height: 8 },
-  savingsLabelRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  savingsLabel: { fontFamily: "Inter", fontSize: 12 },
-  savingsMeta: { fontFamily: "Inter", fontSize: 11 },
+  // Compact savings card
+  compactSavingsCard: {
+    borderRadius: 16,
+    marginBottom: 24,
+    padding: 16,
+  },
+  compactSavingsRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  savingsStatusText: {
+    fontFamily: "Inter-Bold",
+    fontSize: 15,
+  },
+  savingsPct: {
+    fontFamily: "Inter-Medium",
+    fontSize: 12,
+  },
+  savingsMiniBarBg: {
+    borderRadius: 999,
+    height: 4,
+    overflow: "hidden",
+  },
+  savingsMiniBarFill: {
+    borderRadius: 999,
+    height: 4,
+  },
 });

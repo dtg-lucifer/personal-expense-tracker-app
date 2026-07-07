@@ -117,14 +117,23 @@ export default function SettingsMenuScreen() {
             iconBg={colors.ink}
             iconFg={colors.background}
             title="Export expenses"
-            sub="Download CSV for any date range"
+            sub="CSV and full backup"
             onPress={() => router.push("/(tabs)/settings/export")}
           />
           <View style={[styles.sep, { backgroundColor: colors.hairline, marginLeft: 68 }]} />
           <MenuRow
+            icon="↓"
+            iconBg={colors.ink}
+            iconFg={colors.background}
+            title="Import backup"
+            sub="Restore data from a JSON file"
+            onPress={() => router.push("/(tabs)/settings/import")}
+          />
+          <View style={[styles.sep, { backgroundColor: colors.hairline, marginLeft: 68 }]} />
+          <MenuRow
             icon="#"
-            iconBg={colors.backgroundSoft}
-            iconFg={colors.ink}
+            iconBg={colors.ink}
+            iconFg={colors.background}
             title="Categories"
             sub="Add, edit or delete categories"
             onPress={() => router.push("/(tabs)/settings/categories")}
@@ -143,8 +152,8 @@ export default function SettingsMenuScreen() {
         >
           <MenuRow
             icon="i"
-            iconBg={colors.backgroundSoft}
-            iconFg={colors.ink}
+            iconBg={colors.ink}
+            iconFg={colors.background}
             title="About"
             sub="Version and data info"
             onPress={() => router.push("/(tabs)/settings/about")}
