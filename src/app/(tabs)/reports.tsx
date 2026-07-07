@@ -19,28 +19,38 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import AddExpenseModal from "@/components/AddExpenseModal";
 import {
   ExpenseCategoryBarChart,
   ExpenseDonutChart,
   ExpenseLineChart,
   ExpenseMonthlyLineChart,
+  BudgetLineChart,
 } from "@/components/ExpenseChart";
 import ExpenseList from "@/components/ExpenseList";
 import { useTheme } from "@/context/ThemeContext";
+import { formatDate, formatDateRange, formatMonthYear } from "@/lib/dateUtils";
 import {
   getDailyTotalsInRange,
   getExpenseSummaryInRange,
   getExpensesInRange,
   getMonthlyTotalsInRange,
   getTotalInRange,
+  getGainTotalInRange,
   getMonthRange,
   getWeekRange,
   getYearRange,
+  getBudgetBalance,
+  getBalanceOverTime,
+  getActiveSavingsGoal,
+  getSavingsProgress,
+  today,
   toISODate,
   type CategorySummary,
   type DailyTotal,
   type MonthlyTotal,
   type ExpenseWithCategory,
+  type SavingsGoal,
 } from "@/lib/database";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -62,11 +72,7 @@ function getRangeForPeriod(
     return {
       start: s,
       end: s,
-      label: d.toLocaleDateString("en-IN", {
-        weekday: "long",
-        day: "numeric",
-        month: "short",
-      }),
+      label: formatDate(s),
     };
   }
 
@@ -77,7 +83,7 @@ function getRangeForPeriod(
     return {
       start,
       end,
-      label: `${start.slice(5)} – ${end.slice(5)}`,
+      label: formatDateRange(start, end),
     };
   }
 
@@ -87,10 +93,7 @@ function getRangeForPeriod(
     return {
       start,
       end,
-      label: base.toLocaleDateString("en-IN", {
-        month: "long",
-        year: "numeric",
-      }),
+      label: formatMonthYear(`${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`),
     };
   }
 
@@ -141,6 +144,16 @@ export default function ReportsScreen() {
   const [expenses, setExpenses] = useState<ExpenseWithCategory[]>([]);
   const [total, setTotal] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseWithCategory | null>(null);
+
+  // Budget + Savings summary (always shows current month regardless of period toggle)
+  const [budgetBalance, setBudgetBalanceState] = useState(0);
+  const [budgetCurrentBalance, setBudgetCurrentBalance] = useState(0);
+  const [monthExpenses, setMonthExpenses] = useState(0);
+  const [monthGains, setMonthGains] = useState(0);
+  const [activeSavingsGoal, setActiveSavingsGoal] = useState<SavingsGoal | null>(null);
+  const [savingsNet, setSavingsNet] = useState(0);
 
   const { start, end, label } = useMemo(
     () => getRangeForPeriod(mode, offset),
@@ -160,6 +173,27 @@ export default function ReportsScreen() {
     } else {
       setDailyTotals(getDailyTotalsInRange(start, end, catIdArg));
       setMonthlyTotals([]);
+    }
+
+    // Budget summary — always current month
+    const { start: mStart, end: mEnd } = getMonthRange();
+    const bal = getBudgetBalance();
+    const base = bal?.amount ?? 0;
+    setBudgetBalanceState(base);
+    const points = getBalanceOverTime(mStart, mEnd, base);
+    const todayStr = today();
+    const todayPoint = points.find((p) => p.date === todayStr);
+    setBudgetCurrentBalance(todayPoint?.balance ?? base);
+    setMonthExpenses(getTotalInRange(mStart, mEnd));
+    setMonthGains(getGainTotalInRange(mStart, mEnd));
+
+    // Active savings goal
+    const goal = getActiveSavingsGoal();
+    setActiveSavingsGoal(goal);
+    if (goal) {
+      setSavingsNet(getSavingsProgress(goal.start_date, goal.end_date));
+    } else {
+      setSavingsNet(0);
     }
   }, [start, end, catIdArg, mode]);
 
@@ -187,6 +221,16 @@ export default function ReportsScreen() {
 
   function handleAllPress() {
     setSelectedCategoryId(null);
+  }
+
+  function handleEdit(expense: ExpenseWithCategory) {
+    setEditingExpense(expense);
+    setEditModalVisible(true);
+  }
+
+  function handleEditClose() {
+    setEditModalVisible(false);
+    setEditingExpense(null);
   }
 
   // ── Dynamic styles ──────────────────────────────────────────────────────────
@@ -401,6 +445,74 @@ export default function ReportsScreen() {
           )}
         </View>
 
+        {/* ── Budget summary (current month) ──────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={S.sectionTitle}>Budget · this month</Text>
+          <View style={[styles.budgetCard, { backgroundColor: "#000" }]}>
+            <Text style={styles.budgetCardLabel}>CURRENT BALANCE</Text>
+            <Text style={styles.budgetCardAmount}>₹{budgetCurrentBalance.toFixed(2)}</Text>
+            <View style={styles.budgetCardRow}>
+              <View style={styles.budgetCardStat}>
+                <Text style={styles.budgetCardStatLabel}>Starting</Text>
+                <Text style={styles.budgetCardStatValue}>₹{budgetBalance.toFixed(2)}</Text>
+              </View>
+              <View style={styles.budgetCardStat}>
+                <Text style={styles.budgetCardStatLabel}>Expenses</Text>
+                <Text style={[styles.budgetCardStatValue, { color: "#f87171" }]}>−₹{monthExpenses.toFixed(2)}</Text>
+              </View>
+              <View style={styles.budgetCardStat}>
+                <Text style={styles.budgetCardStatLabel}>Gains</Text>
+                <Text style={[styles.budgetCardStatValue, { color: "#4ade80" }]}>+₹{monthGains.toFixed(2)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Active savings goal ──────────────────────────────────────── */}
+        {activeSavingsGoal && (() => {
+          const target = activeSavingsGoal.target_amount;
+          const isMet = savingsNet >= target;
+          const pct = target > 0 ? Math.min(1, Math.max(0, savingsNet / target)) : 0;
+          const remaining = target - savingsNet;
+          return (
+            <View style={styles.section}>
+              <Text style={S.sectionTitle}>Savings · {activeSavingsGoal.title}</Text>
+              <View style={[styles.savingsCard, { backgroundColor: colors.backgroundSoft }]}>
+                {/* Status text */}
+                <Text style={[styles.savingsStatus, { color: isMet ? "#16a34a" : "#dc2626" }]}>
+                  {isMet
+                    ? `+₹${(savingsNet - target).toFixed(2)} extra saved 🎉`
+                    : `₹${remaining.toFixed(2)} more to save`}
+                </Text>
+                {/* Progress bar */}
+                <View style={[styles.savingsBarBg, { backgroundColor: colors.hairline }]}>
+                  <View
+                    style={[
+                      styles.savingsBarFill,
+                      {
+                        width: `${Math.round(pct * 100)}%` as any,
+                        backgroundColor: isMet ? "#16a34a" : colors.ink,
+                      },
+                    ]}
+                  />
+                </View>
+                {/* Labels */}
+                <View style={styles.savingsLabelRow}>
+                  <Text style={[styles.savingsLabel, { color: colors.body }]}>
+                    Saved: ₹{Math.max(0, savingsNet).toFixed(2)}
+                  </Text>
+                  <Text style={[styles.savingsLabel, { color: colors.body }]}>
+                    Target: ₹{target.toFixed(2)}  ({Math.round(pct * 100)}%)
+                  </Text>
+                </View>
+                <Text style={[styles.savingsMeta, { color: colors.mute }]}>
+                  {activeSavingsGoal.period_type} · ends {formatDate(activeSavingsGoal.end_date)}
+                </Text>
+              </View>
+            </View>
+          );
+        })()}
+
         {/* Category filter pills — hidden in daily mode */}
         {showCategoryFilter && (
           <ScrollView
@@ -545,6 +657,7 @@ export default function ReportsScreen() {
             <ExpenseList
               expenses={expenses}
               onRefresh={loadData}
+              onEdit={handleEdit}
               showDate={mode !== "daily"}
               emptyMessage={
                 mode === "daily"
@@ -555,6 +668,13 @@ export default function ReportsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <AddExpenseModal
+        visible={editModalVisible}
+        onClose={handleEditClose}
+        onAdded={loadData}
+        expense={editingExpense}
+      />
     </SafeAreaView>
   );
 }
@@ -571,4 +691,48 @@ const styles = StyleSheet.create({
   breakdownDot: { borderRadius: 999, height: 10, marginRight: 12, width: 10 },
   breakdownRight: { alignItems: "flex-end" },
   barFill: { borderRadius: 999, height: 3 },
+
+  // Budget card
+  budgetCard: {
+    borderRadius: 16,
+    padding: 20,
+  },
+  budgetCardLabel: {
+    color: "#afafaf",
+    fontFamily: "Inter-Medium",
+    fontSize: 10,
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  budgetCardAmount: {
+    color: "#fff",
+    fontFamily: "Inter-Bold",
+    fontSize: 32,
+    marginBottom: 16,
+  },
+  budgetCardRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  budgetCardStat: { alignItems: "flex-start" },
+  budgetCardStatLabel: {
+    color: "#afafaf",
+    fontFamily: "Inter",
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  budgetCardStatValue: {
+    color: "#fff",
+    fontFamily: "Inter-Bold",
+    fontSize: 14,
+  },
+
+  // Savings card
+  savingsCard: { borderRadius: 16, padding: 20 },
+  savingsStatus: { fontFamily: "Inter-Bold", fontSize: 20, marginBottom: 14 },
+  savingsBarBg: { borderRadius: 999, height: 8, overflow: "hidden", marginBottom: 8 },
+  savingsBarFill: { borderRadius: 999, height: 8 },
+  savingsLabelRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  savingsLabel: { fontFamily: "Inter", fontSize: 12 },
+  savingsMeta: { fontFamily: "Inter", fontSize: 11 },
 });

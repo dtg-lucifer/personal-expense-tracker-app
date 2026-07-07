@@ -14,7 +14,7 @@ import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { useTheme } from "@/context/ThemeContext";
 import type { ThemeColors } from "@/context/ThemeContext";
-import type { CategorySummary, DailyTotal, MonthlyTotal } from "@/lib/database";
+import type { BalancePoint, CategorySummary, DailyTotal, MonthlyTotal } from "@/lib/database";
 
 // ─── Build a chart theme from the app's palette ───────────────────────────────
 
@@ -248,7 +248,11 @@ export function ExpenseDonutChart({
   const { colors } = useTheme();
   const chartWidth = width - 32;
 
-  if (data.length === 0) {
+  // Filter out categories with zero or negative totals — the chart library
+  // renders a blank white area when all slices are 0.
+  const validData = data.filter((d) => d.total > 0);
+
+  if (validData.length === 0) {
     return (
       <View
         style={[
@@ -263,7 +267,7 @@ export function ExpenseDonutChart({
     );
   }
 
-  const chartData = data.map((d) => ({
+  const chartData = validData.map((d) => ({
     category: d.category_name,
     amount: d.total,
     color: d.category_color || "#AEB6BF",
@@ -283,6 +287,56 @@ export function ExpenseDonutChart({
       height={height}
       legend={{ reservedHeight: 100, itemGap: 6 }}
       activeSlice={{ inactiveOpacity: 0.36, strokeWidth: 3 }}
+      theme={buildChartTheme(colors)}
+    />
+  );
+}
+
+// ─── BudgetLineChart (balance over time) ─────────────────────────────────────
+
+interface BudgetLineChartProps {
+  data: BalancePoint[];
+  xLabelFormatter?: (date: string) => string;
+  height?: number;
+}
+
+export function BudgetLineChart({
+  data,
+  xLabelFormatter,
+  height = 200,
+}: BudgetLineChartProps) {
+  const { width } = useWindowDimensions();
+  const { colors } = useTheme();
+  const chartWidth = width - 32;
+
+  if (data.length === 0) {
+    return (
+      <View
+        style={[
+          styles.emptyChart,
+          { height, backgroundColor: colors.backgroundSoft },
+        ]}
+      >
+        <Text style={[styles.emptyText, { color: colors.mute }]}>
+          No data yet
+        </Text>
+      </View>
+    );
+  }
+
+  const chartData = data.map((d) => ({
+    label: xLabelFormatter ? xLabelFormatter(d.date) : d.date.slice(5),
+    balance: d.balance,
+  }));
+
+  return (
+    <LineChart
+      data={chartData}
+      xKey="label"
+      yKey="balance"
+      width={chartWidth}
+      height={height}
+      curve="monotone"
       theme={buildChartTheme(colors)}
     />
   );

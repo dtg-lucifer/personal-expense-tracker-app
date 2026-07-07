@@ -5,8 +5,11 @@
  * Uses expo-sqlite (v57 new API with `openDatabaseSync`).
  *
  * Schema:
- *   categories:  id, name, color, is_predefined, created_at
- *   expenses:    id, name, amount, category_id, description, date, tags, created_at
+ *   categories:     id, name, color, is_predefined, created_at
+ *   expenses:       id, name, amount, category_id, description, date, tags, type, created_at
+ *                   type: 'expense' | 'gain'
+ *   budget_balance: id, amount, set_at (one active row, updated in place)
+ *   savings_goals:  id, title, target_amount, period_type, start_date, end_date, created_at
  */
 
 import * as SQLite from "expo-sqlite";
@@ -21,6 +24,8 @@ export interface Category {
   created_at: string;
 }
 
+export type TransactionType = "expense" | "gain";
+
 export interface Expense {
   id: number;
   name: string;
@@ -29,6 +34,7 @@ export interface Expense {
   description: string;
   date: string; // ISO date string: YYYY-MM-DD
   tags: string; // space-separated
+  type: TransactionType;
   created_at: string;
 }
 
@@ -48,6 +54,30 @@ export interface CategorySummary {
   category_color: string;
   total: number;
   count: number;
+}
+
+export interface BudgetBalance {
+  id: number;
+  amount: number;
+  set_at: string;
+}
+
+export type SavingsPeriodType = "monthly" | "annual";
+
+export interface SavingsGoal {
+  id: number;
+  title: string;
+  target_amount: number;
+  period_type: SavingsPeriodType;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+}
+
+/** Running balance snapshot used for the budget line chart */
+export interface BalancePoint {
+  date: string;
+  balance: number;
 }
 
 // ─── Predefined categories ────────────────────────────────────────────────────
@@ -92,7 +122,7 @@ export function initDatabase(): void {
     );
   `);
 
-  // Expenses table
+  // Expenses table — with `type` column (expense | gain)
   db.execSync(`
     CREATE TABLE IF NOT EXISTS expenses (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,9 +132,17 @@ export function initDatabase(): void {
       description TEXT    NOT NULL DEFAULT '',
       date        TEXT    NOT NULL,
       tags        TEXT    NOT NULL DEFAULT '',
+      type        TEXT    NOT NULL DEFAULT 'expense',
       created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // Migrate existing rows that don't have the type column yet
+  try {
+    db.execSync("ALTER TABLE expenses ADD COLUMN type TEXT NOT NULL DEFAULT 'expense';");
+  } catch {
+    // Column already exists — safe to ignore
+  }
 
   // Index for fast date-range queries
   db.execSync(
@@ -113,6 +151,28 @@ export function initDatabase(): void {
   db.execSync(
     "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);"
   );
+
+  // Budget balance table — stores a single running balance value
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS budget_balance (
+      id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      amount REAL    NOT NULL DEFAULT 0,
+      set_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Savings goals table
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS savings_goals (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      title         TEXT    NOT NULL,
+      target_amount REAL    NOT NULL,
+      period_type   TEXT    NOT NULL DEFAULT 'monthly',
+      start_date    TEXT    NOT NULL,
+      end_date      TEXT    NOT NULL,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 
   // Seed predefined categories if the table is empty
   const count = db.getFirstSync<{ n: number }>(
@@ -246,13 +306,14 @@ export interface InsertExpenseParams {
   description?: string;
   date?: string; // YYYY-MM-DD, defaults to today
   tags?: string; // space-separated
+  type?: TransactionType; // defaults to 'expense'
 }
 
 export function insertExpense(params: InsertExpenseParams): number {
   const db = getDatabase();
   const result = db.runSync(
-    `INSERT INTO expenses (name, amount, category_id, description, date, tags)
-     VALUES (?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO expenses (name, amount, category_id, description, date, tags, type)
+     VALUES (?, ?, ?, ?, ?, ?, ?);`,
     [
       params.name,
       params.amount,
@@ -260,6 +321,7 @@ export function insertExpense(params: InsertExpenseParams): number {
       params.description ?? "",
       params.date ?? today(),
       params.tags ?? "",
+      params.type ?? "expense",
     ]
   );
   return result.lastInsertRowId;
@@ -272,7 +334,7 @@ export function updateExpense(
   const db = getDatabase();
   db.runSync(
     `UPDATE expenses
-     SET name = ?, amount = ?, category_id = ?, description = ?, date = ?, tags = ?
+     SET name = ?, amount = ?, category_id = ?, description = ?, date = ?, tags = ?, type = ?
      WHERE id = ?;`,
     [
       params.name,
@@ -281,6 +343,7 @@ export function updateExpense(
       params.description ?? "",
       params.date ?? today(),
       params.tags ?? "",
+      params.type ?? "expense",
       id,
     ]
   );
@@ -345,8 +408,8 @@ export function getExpensesInRange(
 }
 
 /**
- * Sum of expenses grouped by date within [start, end].
- * Returns one row per day even for days with no expenses (filled with 0).
+ * Sum of expense-type transactions grouped by date within [start, end].
+ * Returns one row per day (filled with 0 for days with no data).
  */
 export function getDailyTotalsInRange(
   start: string,
@@ -360,7 +423,7 @@ export function getDailyTotalsInRange(
     rows = db.getAllSync<DailyTotal>(
       `SELECT date, SUM(amount) AS total
        FROM expenses
-       WHERE date BETWEEN ? AND ? AND category_id = ?
+       WHERE date BETWEEN ? AND ? AND category_id = ? AND type = 'expense'
        GROUP BY date
        ORDER BY date ASC;`,
       [start, end, categoryId]
@@ -369,7 +432,7 @@ export function getDailyTotalsInRange(
     rows = db.getAllSync<DailyTotal>(
       `SELECT date, SUM(amount) AS total
        FROM expenses
-       WHERE date BETWEEN ? AND ?
+       WHERE date BETWEEN ? AND ? AND type = 'expense'
        GROUP BY date
        ORDER BY date ASC;`,
       [start, end]
@@ -390,7 +453,7 @@ export function getDailyTotalsInRange(
 }
 
 /**
- * Total + count per category in [start, end].
+ * Total + count per category in [start, end] for expense-type only.
  * Sorted by total descending.
  */
 export function getExpenseSummaryInRange(
@@ -407,7 +470,7 @@ export function getExpenseSummaryInRange(
        COUNT(*)      AS count
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
-     WHERE e.date BETWEEN ? AND ?
+     WHERE e.date BETWEEN ? AND ? AND e.type = 'expense'
      GROUP BY e.category_id
      ORDER BY total DESC;`,
     [start, end]
@@ -415,19 +478,31 @@ export function getExpenseSummaryInRange(
 }
 
 /**
- * Grand total for a date range.
+ * Grand total of expense-type transactions for a date range.
  */
 export function getTotalInRange(start: string, end: string): number {
   const db = getDatabase();
   const row = db.getFirstSync<{ total: number }>(
-    "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE date BETWEEN ? AND ?;",
+    "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE date BETWEEN ? AND ? AND type = 'expense';",
     [start, end]
   );
   return row?.total ?? 0;
 }
 
 /**
- * Top-N most expensive categories this week.
+ * Grand total of gain-type transactions for a date range.
+ */
+export function getGainTotalInRange(start: string, end: string): number {
+  const db = getDatabase();
+  const row = db.getFirstSync<{ total: number }>(
+    "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE date BETWEEN ? AND ? AND type = 'gain';",
+    [start, end]
+  );
+  return row?.total ?? 0;
+}
+
+/**
+ * Top-N most expensive categories this week (expense type only).
  */
 export function getTopCategoryThisWeek(
   n: number = 1
@@ -443,7 +518,7 @@ export function getTopCategoryThisWeek(
        COUNT(*)      AS count
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
-     WHERE e.date BETWEEN ? AND ?
+     WHERE e.date BETWEEN ? AND ? AND e.type = 'expense'
      GROUP BY e.category_id
      ORDER BY total DESC
      LIMIT ?;`,
@@ -471,12 +546,12 @@ export function getMonthlyTotalsInRange(
   const query = categoryId !== undefined
     ? `SELECT strftime('%Y-%m', date) AS month, SUM(amount) AS total
        FROM expenses
-       WHERE date BETWEEN ? AND ? AND category_id = ?
+       WHERE date BETWEEN ? AND ? AND category_id = ? AND type = 'expense'
        GROUP BY month
        ORDER BY month ASC;`
     : `SELECT strftime('%Y-%m', date) AS month, SUM(amount) AS total
        FROM expenses
-       WHERE date BETWEEN ? AND ?
+       WHERE date BETWEEN ? AND ? AND type = 'expense'
        GROUP BY month
        ORDER BY month ASC;`;
 
@@ -503,17 +578,166 @@ export function getMonthlyTotalsInRange(
   return result;
 }
 
+// ─── Budget balance ───────────────────────────────────────────────────────────
+
+/** Get the current stored budget balance (the user's manually-set starting balance). */
+export function getBudgetBalance(): BudgetBalance | null {
+  const db = getDatabase();
+  return db.getFirstSync<BudgetBalance>(
+    "SELECT * FROM budget_balance ORDER BY id DESC LIMIT 1;"
+  ) ?? null;
+}
+
+/**
+ * Set (upsert) the budget balance.
+ * We keep only one row — update it if it exists, insert otherwise.
+ */
+export function setBudgetBalance(amount: number): void {
+  const db = getDatabase();
+  const existing = getBudgetBalance();
+  if (existing) {
+    db.runSync(
+      "UPDATE budget_balance SET amount = ?, set_at = datetime('now') WHERE id = ?;",
+      [amount, existing.id]
+    );
+  } else {
+    db.runSync(
+      "INSERT INTO budget_balance (amount) VALUES (?);",
+      [amount]
+    );
+  }
+}
+
+/**
+ * Compute the running balance over time starting from a base amount.
+ * For each day in [start, end]:
+ *   balance += gains - expenses
+ * Returns one BalancePoint per day.
+ */
+export function getBalanceOverTime(
+  start: string,
+  end: string,
+  startingBalance: number
+): BalancePoint[] {
+  const db = getDatabase();
+
+  // Get all transactions in range grouped by date, net = gains - expenses
+  const rows = db.getAllSync<{ date: string; net: number }>(
+    `SELECT date,
+       SUM(CASE WHEN type = 'gain' THEN amount ELSE -amount END) AS net
+     FROM expenses
+     WHERE date BETWEEN ? AND ?
+     GROUP BY date
+     ORDER BY date ASC;`,
+    [start, end]
+  );
+
+  const netMap = new Map<string, number>(rows.map((r) => [r.date, r.net]));
+
+  const result: BalancePoint[] = [];
+  let balance = startingBalance;
+  const cursor = new Date(start);
+  const endDate = new Date(end);
+
+  while (cursor <= endDate) {
+    const d = toISODate(cursor);
+    balance += netMap.get(d) ?? 0;
+    result.push({ date: d, balance });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return result;
+}
+
+// ─── Savings goals ────────────────────────────────────────────────────────────
+
+export function getAllSavingsGoals(): SavingsGoal[] {
+  const db = getDatabase();
+  return db.getAllSync<SavingsGoal>(
+    "SELECT * FROM savings_goals ORDER BY created_at DESC;"
+  );
+}
+
+export function getActiveSavingsGoal(): SavingsGoal | null {
+  const t = today();
+  const db = getDatabase();
+  return (
+    db.getFirstSync<SavingsGoal>(
+      "SELECT * FROM savings_goals WHERE start_date <= ? AND end_date >= ? ORDER BY created_at DESC LIMIT 1;",
+      [t, t]
+    ) ?? null
+  );
+}
+
+export function insertSavingsGoal(
+  title: string,
+  target_amount: number,
+  period_type: SavingsPeriodType,
+  start_date: string,
+  end_date: string
+): number {
+  const db = getDatabase();
+  const result = db.runSync(
+    `INSERT INTO savings_goals (title, target_amount, period_type, start_date, end_date)
+     VALUES (?, ?, ?, ?, ?);`,
+    [title, target_amount, period_type, start_date, end_date]
+  );
+  return result.lastInsertRowId;
+}
+
+export function updateSavingsGoal(
+  id: number,
+  title: string,
+  target_amount: number,
+  period_type: SavingsPeriodType,
+  start_date: string,
+  end_date: string
+): void {
+  const db = getDatabase();
+  db.runSync(
+    `UPDATE savings_goals
+     SET title = ?, target_amount = ?, period_type = ?, start_date = ?, end_date = ?
+     WHERE id = ?;`,
+    [title, target_amount, period_type, start_date, end_date, id]
+  );
+}
+
+export function deleteSavingsGoal(id: number): void {
+  const db = getDatabase();
+  db.runSync("DELETE FROM savings_goals WHERE id = ?;", [id]);
+}
+
+/**
+ * For a savings goal covering [start, end]:
+ *   net_saved = total gains - total expenses in that range
+ * Returns how much was saved (positive = saved, negative = overspent).
+ */
+export function getSavingsProgress(
+  start: string,
+  end: string
+): number {
+  const db = getDatabase();
+  const row = db.getFirstSync<{ net: number }>(
+    `SELECT SUM(CASE WHEN type = 'gain' THEN amount ELSE -amount END) AS net
+     FROM expenses
+     WHERE date BETWEEN ? AND ?;`,
+    [start, end]
+  );
+  return row?.net ?? 0;
+}
+
 // ─── CSV export ───────────────────────────────────────────────────────────────
 
 export function exportExpensesToCSV(start: string, end: string): string {
   const rows = getExpensesInRange(start, end);
-  const header = "id,name,amount,category,description,date,tags,created_at";
+  const header = "id,name,amount,type,category,description,date,tags,created_at";
   const lines = rows.map((r) => {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     return [
       r.id,
       esc(r.name),
       r.amount,
+      r.type,
       esc(r.category_name ?? ""),
       esc(r.description),
       r.date,

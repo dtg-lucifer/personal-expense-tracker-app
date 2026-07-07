@@ -5,6 +5,8 @@
  * - ScrollView contentContainerStyle has paddingBottom that accounts for the
  *   tab bar height so content is never hidden behind it.
  * - FAB sits above the tab bar using `bottom` that accounts for insets.
+ *
+ * Single-tapping an expense in the list opens the edit modal.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -22,6 +24,7 @@ import AddExpenseModal from "@/components/AddExpenseModal";
 import { ExpenseLineChart } from "@/components/ExpenseChart";
 import ExpenseList from "@/components/ExpenseList";
 import { useTheme } from "@/context/ThemeContext";
+import { formatDate as formatDateUtil } from "@/lib/dateUtils";
 import {
   getDailyTotalsInRange,
   getExpensesForDate,
@@ -41,14 +44,6 @@ function greeting() {
   return "Good evening";
 }
 
-function formatDate(d: Date) {
-  return d.toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-}
-
 function shortDay(date: string) {
   return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
     weekday: "short",
@@ -63,6 +58,8 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseWithCategory | null>(null);
+
   const [todayExpenses, setTodayExpenses] = useState<ExpenseWithCategory[]>([]);
   const [weeklyTotals, setWeeklyTotals] = useState<DailyTotal[]>([]);
   const [weekTotal, setWeekTotal] = useState(0);
@@ -74,7 +71,8 @@ export default function HomeScreen() {
     const t = today();
     const exp = getExpensesForDate(t);
     setTodayExpenses(exp);
-    setTodayTotal(exp.reduce((s, e) => s + e.amount, 0));
+    // Today total: only expenses (gains shown separately)
+    setTodayTotal(exp.filter(e => e.type === "expense").reduce((s, e) => s + e.amount, 0));
     const { start, end } = getWeekRange();
     setWeeklyTotals(getDailyTotalsInRange(start, end));
     setWeekTotal(getTotalInRange(start, end));
@@ -90,6 +88,16 @@ export default function HomeScreen() {
     loadData();
     setRefreshing(false);
   }, [loadData]);
+
+  function handleEdit(expense: ExpenseWithCategory) {
+    setEditingExpense(expense);
+    setModalVisible(true);
+  }
+
+  function handleModalClose() {
+    setModalVisible(false);
+    setEditingExpense(null);
+  }
 
   // Tab bar overlays the screen; we need to push content above it
   const tabBarClearance = TAB_BAR_HEIGHT + insets.bottom;
@@ -122,7 +130,7 @@ export default function HomeScreen() {
             {greeting()}
           </Text>
           <Text style={[styles.dateText, { color: colors.ink }]}>
-            {formatDate(new Date())}
+            {formatDateUtil(today())}
           </Text>
         </View>
 
@@ -205,10 +213,10 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Today's expenses */}
+        {/* Today's transactions */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>
-            Today's expenses
+            Today's transactions
           </Text>
           <View
             style={[
@@ -222,6 +230,7 @@ export default function HomeScreen() {
             <ExpenseList
               expenses={todayExpenses}
               onRefresh={loadData}
+              onEdit={handleEdit}
               emptyMessage="Nothing logged today"
             />
           </View>
@@ -238,9 +247,12 @@ export default function HomeScreen() {
             bottom: fabBottom,
           },
         ]}
-        onPress={() => setModalVisible(true)}
+        onPress={() => {
+          setEditingExpense(null);
+          setModalVisible(true);
+        }}
         activeOpacity={0.85}
-        accessibilityLabel="Add expense"
+        accessibilityLabel="Add transaction"
         accessibilityRole="button"
       >
         <Text style={[styles.fabIcon, { color: colors.background }]}>+</Text>
@@ -248,9 +260,10 @@ export default function HomeScreen() {
 
       <AddExpenseModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
+        onClose={handleModalClose}
         onAdded={loadData}
         defaultDate={today()}
+        expense={editingExpense}
       />
     </SafeAreaView>
   );
