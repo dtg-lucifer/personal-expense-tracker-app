@@ -3,12 +3,10 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@/assets/*": [
-        "./assets/*"
-      ]
+      "@/*": ["./src/*"],
+      "@/lib/*": ["./lib/*"],
+      "@/assets/*": ["./assets/*"],
+      "@/tamagui.config": ["./tamagui.config"]
     }
   },
   "include": [
@@ -16,5 +14,9 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "example"
   ]
 }
