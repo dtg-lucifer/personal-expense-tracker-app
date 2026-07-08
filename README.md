@@ -4,7 +4,7 @@ A black-and-white, Uber-inspired expense tracking app built with Expo and Tamagu
 
 ## Download
 
-Grab the latest APK from the [Releases](https://github.com/dtg-lucifer/expense-tracker-self/releases) tab.
+Grab the latest APK from the [Releases](https://github.com/dtg-lucifer/personal-expense-tracker-app/releases) tab.
 
 ## Features
 
