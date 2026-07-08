@@ -2,10 +2,11 @@
  * src/app/(tabs)/savings.tsx
  *
  * Savings Goals tab.
- * - Add/edit monthly or annual savings goal
+ * - Add multiple savings goals that accumulate into a combined target
+ * - Active goals (period not ended) cannot be edited or deleted
  * - Large status text: red = "X more to save", green = "X extra saved"
  * - Progress bar showing how far along the goal period we are
- * - Net savings = gains - expenses within the goal's date range
+ * - Net savings = gains - expenses within the active goals' date range
  */
 
 import DateTimePicker, {
@@ -34,31 +35,16 @@ import { formatDate, formatDateRange } from "@/lib/dateUtils";
 import {
   deleteSavingsGoal,
   getAllSavingsGoals,
-  getActiveSavingsGoal,
+  getActiveGoals,
   getSavingsProgress,
   insertSavingsGoal,
   today,
   toISODate,
-  updateSavingsGoal,
   type SavingsGoal,
   type SavingsPeriodType,
 } from "@/lib/database";
 
 // ─── SVG Icons ─────────────────────────────────────────────────────────────────
-
-function PencilIcon({ size = 16 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-        stroke="#fff"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
 
 function TrashIcon({ size = 16 }: { size?: number }) {
   return (
@@ -109,15 +95,13 @@ function periodProgress(start: string, end: string): number {
 
 interface GoalModalProps {
   visible: boolean;
-  goal?: SavingsGoal | null; // null = add mode
   onClose: () => void;
   onSaved: () => void;
 }
 
-function GoalModal({ visible, goal, onClose, onSaved }: GoalModalProps) {
+function GoalModal({ visible, onClose, onSaved }: GoalModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const isEdit = !!goal;
 
   const [title, setTitle] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
@@ -128,17 +112,10 @@ function GoalModal({ visible, goal, onClose, onSaved }: GoalModalProps) {
 
   useEffect(() => {
     if (visible) {
-      if (isEdit && goal) {
-        setTitle(goal.title);
-        setTargetAmount(String(goal.target_amount));
-        setPeriodType(goal.period_type);
-        setStartDate(goal.start_date);
-      } else {
-        setTitle("");
-        setTargetAmount("");
-        setPeriodType("monthly");
-        setStartDate(today());
-      }
+      setTitle("");
+      setTargetAmount("");
+      setPeriodType("monthly");
+      setStartDate(today());
       setErrors({});
       setShowIOSPicker(false);
     }
@@ -172,11 +149,7 @@ function GoalModal({ visible, goal, onClose, onSaved }: GoalModalProps) {
     if (!validate()) return;
     try {
       const endDate = computeEndDate(startDate, periodType);
-      if (isEdit && goal) {
-        updateSavingsGoal(goal.id, title.trim(), parseFloat(targetAmount), periodType, startDate, endDate);
-      } else {
-        insertSavingsGoal(title.trim(), parseFloat(targetAmount), periodType, startDate, endDate);
-      }
+      insertSavingsGoal(title.trim(), parseFloat(targetAmount), periodType, startDate, endDate);
       onSaved();
       onClose();
     } catch {
@@ -206,7 +179,7 @@ function GoalModal({ visible, goal, onClose, onSaved }: GoalModalProps) {
           <View style={[gStyles.handle, { backgroundColor: colors.hairline }]} />
           <View style={gStyles.header}>
             <Text style={[gStyles.title, { color: colors.ink }]}>
-              {isEdit ? "Edit goal" : "New savings goal"}
+              New savings goal
             </Text>
             <TouchableOpacity
               onPress={onClose}
@@ -328,7 +301,7 @@ function GoalModal({ visible, goal, onClose, onSaved }: GoalModalProps) {
               activeOpacity={0.8}
             >
               <Text style={[gStyles.saveBtnText, { color: colors.background }]}>
-                {isEdit ? "Update goal" : "Create goal"}
+                Create goal
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -373,19 +346,21 @@ export default function SavingsScreen() {
   const insets = useSafeAreaInsets();
 
   const [goalModalVisible, setGoalModalVisible] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [activeGoal, setActiveGoal] = useState<SavingsGoal | null>(null);
+  const [activeGoals, setActiveGoals] = useState<SavingsGoal[]>([]);
   const [allGoals, setAllGoals] = useState<SavingsGoal[]>([]);
   const [netSaved, setNetSaved] = useState(0);
 
   const loadData = useCallback(() => {
-    const active = getActiveSavingsGoal();
-    setActiveGoal(active);
+    const active = getActiveGoals();
+    setActiveGoals(active);
     setAllGoals(getAllSavingsGoals());
-    if (active) {
-      setNetSaved(getSavingsProgress(active.start_date, active.end_date));
+    if (active.length > 0) {
+      // Use the earliest start and latest end across all active goals
+      const starts = active.map(g => g.start_date).sort();
+      const ends = active.map(g => g.end_date).sort().reverse();
+      setNetSaved(getSavingsProgress(starts[0], ends[0]));
     } else {
       setNetSaved(0);
     }
@@ -413,27 +388,30 @@ export default function SavingsScreen() {
   const tabBarClearance = 60 + insets.bottom;
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const target = activeGoal?.target_amount ?? 0;
-  const remaining = target - netSaved;
-  const isGoalMet = netSaved >= target;
-  const extraSaved = netSaved - target;
+  // Combined target = sum of all active goals
+  const combinedTarget = activeGoals.reduce((sum, g) => sum + g.target_amount, 0);
+  const remaining = combinedTarget - netSaved;
+  const isGoalMet = activeGoals.length > 0 && netSaved >= combinedTarget;
+  const extraSaved = netSaved - combinedTarget;
 
-  const progress = target > 0 ? Math.min(1, Math.max(0, netSaved / target)) : 0;
-  const timePct = activeGoal ? periodProgress(activeGoal.start_date, activeGoal.end_date) : 0;
+  const progress = combinedTarget > 0 ? Math.min(1, Math.max(0, netSaved / combinedTarget)) : 0;
 
-  /**
-   * Goal is "locked" (immutable) when:
-   *   - there is an active goal
-   *   - the goal period has not ended yet (today <= end_date)
-   *   - AND the goal has NOT been met
-   *
-   * Once the period ends OR the goal is met, the user may add a new goal or edit.
-   */
-  const goalPeriodActive = activeGoal ? today() <= activeGoal.end_date : false;
-  const isLocked = !!(activeGoal && goalPeriodActive && !isGoalMet);
+  // Time progress: use the earliest start and latest end of active goals
+  const activeStarts = activeGoals.map(g => g.start_date).sort();
+  const activeEnds = activeGoals.map(g => g.end_date).sort().reverse();
+  const timePct = activeGoals.length > 0
+    ? periodProgress(activeStarts[0], activeEnds[0])
+    : 0;
 
-  // Can add a new goal only when there is no active goal, or the active one ended/was met
-  const canAddNewGoal = !isLocked;
+  // An individual goal is "locked" if today is within its period (can't edit/delete)
+  function isGoalLocked(g: SavingsGoal): boolean {
+    return today() >= g.start_date && today() <= g.end_date;
+  }
+
+  // Determine the period label for the combined active goals
+  const activePeriodType = activeGoals.length === 1
+    ? activeGoals[0].period_type
+    : activeGoals.length > 1 ? "combined" : "";
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -448,32 +426,26 @@ export default function SavingsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.screenTitle, { color: colors.ink }]}>Savings</Text>
-          {canAddNewGoal ? (
-            <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: colors.ink }]}
-              onPress={() => { setEditingGoal(null); setGoalModalVisible(true); }}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.addBtnText, { color: colors.background }]}>+ New goal</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={[styles.addBtn, styles.addBtnLocked, { backgroundColor: colors.backgroundSoft }]}>
-            <Text style={[styles.addBtnText, { color: colors.mute }]}>Locked</Text>
-            </View>
-          )}
+          <TouchableOpacity
+            style={[styles.addBtn, { backgroundColor: colors.ink }]}
+            onPress={() => { setGoalModalVisible(true); }}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.addBtnText, { color: colors.background }]}>+ Add goal</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Lock notice banner */}
-        {isLocked && (
+        {/* Info banner when there are active goals */}
+        {activeGoals.length > 1 && (
           <View style={[styles.lockBanner, { backgroundColor: colors.backgroundSoft }]}>
             <Text style={[styles.lockBannerText, { color: colors.body }]}>
-              Goal is active and locked. It will unlock when the period ends or the target is met.
+              {activeGoals.length} active goals · combined target ₹{combinedTarget.toFixed(2)}
             </Text>
           </View>
         )}
 
         {/* ── Active goal section ────────────────────────────────────────── */}
-        {activeGoal ? (
+        {activeGoals.length > 0 ? (
           <>
             {/* Big status text */}
             <View style={styles.statusBlock}>
@@ -494,32 +466,25 @@ export default function SavingsScreen() {
                     ₹{remaining.toFixed(2)}
                   </Text>
                   <Text style={[styles.statusSub, { color: colors.body }]}>
-                    to reach your {activeGoal.period_type} goal
+                    to reach your {activePeriodType} goal
                   </Text>
                 </>
               )}
             </View>
 
-            {/* Goal details card */}
+            {/* Combined progress card */}
             <View style={[styles.goalCard, { backgroundColor: colors.backgroundSoft }]}>
               <View style={styles.goalCardHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.goalTitle, { color: colors.ink }]}>{activeGoal.title}</Text>
+                  <Text style={[styles.goalTitle, { color: colors.ink }]}>
+                    {activeGoals.length === 1 ? activeGoals[0].title : `${activeGoals.length} active goals`}
+                  </Text>
                   <Text style={[styles.goalMeta, { color: colors.mute }]}>
-                    {activeGoal.period_type.charAt(0).toUpperCase() + activeGoal.period_type.slice(1)}
+                    {activePeriodType.charAt(0).toUpperCase() + activePeriodType.slice(1)}
                     {" · "}
-                    {formatDateRange(activeGoal.start_date, activeGoal.end_date)}
+                    {formatDateRange(activeStarts[0], activeEnds[0])}
                   </Text>
                 </View>
-                {/* Edit button only shown when not locked */}
-                {!isLocked && (
-                <TouchableOpacity
-                  style={[styles.editGoalBtn, { backgroundColor: colors.backgroundSofter ?? colors.background }]}
-                  onPress={() => { setEditingGoal(activeGoal); setGoalModalVisible(true); }}
-                >
-                  <Text style={[styles.editGoalBtnText, { color: colors.ink }]}>Edit</Text>
-                </TouchableOpacity>
-                )}
               </View>
 
               {/* Savings progress bar */}
@@ -529,7 +494,7 @@ export default function SavingsScreen() {
                     Saved: ₹{Math.max(0, netSaved).toFixed(2)}
                   </Text>
                   <Text style={[styles.progressLabel, { color: colors.body }]}>
-                    Target: ₹{target.toFixed(2)}
+                    Target: ₹{combinedTarget.toFixed(2)}
                   </Text>
                 </View>
                 <View style={[styles.progressBar, { backgroundColor: colors.hairline }]}>
@@ -585,7 +550,8 @@ export default function SavingsScreen() {
             <Text style={[styles.sectionTitle, { color: colors.ink }]}>All goals</Text>
             <View style={[styles.listCard, { borderColor: colors.hairline }]}>
               {allGoals.map((g, i) => {
-                const isActive = g.id === activeGoal?.id;
+                const locked = isGoalLocked(g);
+                const isActiveGoal = activeGoals.some(ag => ag.id === g.id);
                 const saved = getSavingsProgress(g.start_date, g.end_date);
                 const pct = g.target_amount > 0 ? Math.min(1, Math.max(0, saved / g.target_amount)) : 0;
                 const met = saved >= g.target_amount;
@@ -598,30 +564,26 @@ export default function SavingsScreen() {
                           <Text style={[styles.goalRowTitle, { color: colors.ink }]} numberOfLines={1}>
                             {g.title}
                           </Text>
-                          {isActive && (
+                          {isActiveGoal && (
                             <View style={styles.activePill}>
                               <Text style={styles.activePillText}>Active</Text>
                             </View>
                           )}
+                          {locked && (
+                            <View style={[styles.lockedPill]}>
+                              <Text style={styles.lockedPillText}>Locked</Text>
+                            </View>
+                          )}
                         </View>
                         <Text style={[styles.goalRowMeta, { color: colors.mute }]}>
-                          {g.period_type} · ₹{g.target_amount.toFixed(0)} · {Math.round(pct * 100)}%{met ? " met" : ""}
+                          {g.period_type} · ₹{g.target_amount.toFixed(0)} · {Math.round(pct * 100)}%{met ? " ✓" : ""}
                         </Text>
                       </View>
                       <View style={styles.goalRowActions}>
                         <TouchableOpacity
-                          style={[styles.actionEditBtn, (isActive && isLocked) && styles.actionBtnDisabled]}
+                          style={[styles.actionDeleteBtn, locked && styles.actionBtnDisabled]}
                           onPress={() => {
-                            if (isActive && isLocked) return;
-                            setEditingGoal(g); setGoalModalVisible(true);
-                          }}
-                        >
-                          <PencilIcon size={16} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.actionDeleteBtn, (isActive && isLocked) && styles.actionBtnDisabled]}
-                          onPress={() => {
-                            if (isActive && isLocked) return;
+                            if (locked) return;
                             handleDeleteGoal(g.id);
                           }}
                         >
@@ -637,11 +599,10 @@ export default function SavingsScreen() {
         )}
       </ScrollView>
 
-      {/* Add / Edit goal modal */}
+      {/* Add goal modal */}
       <GoalModal
         visible={goalModalVisible}
-        goal={editingGoal}
-        onClose={() => { setGoalModalVisible(false); setEditingGoal(null); }}
+        onClose={() => { setGoalModalVisible(false); }}
         onSaved={loadData}
       />
     </SafeAreaView>
@@ -664,7 +625,6 @@ const styles = StyleSheet.create({
   },
   screenTitle: { fontFamily: "Inter-Bold", fontSize: 28 },
   addBtn: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
-  addBtnLocked: { opacity: 0.7 },
   addBtnText: { fontFamily: "Inter-Medium", fontSize: 13 },
 
   lockBanner: {
@@ -718,8 +678,6 @@ const styles = StyleSheet.create({
   goalCardHeader: { alignItems: "flex-start", flexDirection: "row", marginBottom: 20 },
   goalTitle: { fontFamily: "Inter-Bold", fontSize: 17, marginBottom: 4 },
   goalMeta: { fontFamily: "Inter", fontSize: 12 },
-  editGoalBtn: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginLeft: 12 },
-  editGoalBtnText: { fontFamily: "Inter-Medium", fontSize: 13 },
 
   progressSection: { marginBottom: 16 },
   progressLabelRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
@@ -761,15 +719,15 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   activePillText: { color: "#16a34a", fontFamily: "Inter-Medium", fontSize: 10, lineHeight: 14 },
-  goalRowActions: { flexDirection: "row", gap: 8, marginLeft: 12, alignItems: "center" },
-  actionEditBtn: {
-    alignItems: "center",
-    backgroundColor: "#374151",
+  lockedPill: {
+    backgroundColor: "#fef9c3",
     borderRadius: 999,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    alignSelf: "center",
   },
+  lockedPillText: { color: "#a16207", fontFamily: "Inter-Medium", fontSize: 10, lineHeight: 14 },
+  goalRowActions: { flexDirection: "row", gap: 8, marginLeft: 12, alignItems: "center" },
   actionDeleteBtn: {
     alignItems: "center",
     backgroundColor: "#dc2626",

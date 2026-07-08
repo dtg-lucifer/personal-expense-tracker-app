@@ -691,6 +691,44 @@ export function getActiveSavingsGoal(): SavingsGoal | null {
   );
 }
 
+/**
+ * Get all active savings goals for today.
+ * Returns goals where today is between start_date and end_date.
+ */
+export function getActiveGoals(): SavingsGoal[] {
+  const t = today();
+  const db = getDatabase();
+  return db.getAllSync<SavingsGoal>(
+    "SELECT * FROM savings_goals WHERE start_date <= ? AND end_date >= ? ORDER BY created_at ASC;",
+    [t, t]
+  );
+}
+
+/**
+ * Get the combined target of all active savings goals.
+ */
+export function getActiveTotalTarget(): number {
+  const activeGoals = getActiveGoals();
+  return activeGoals.reduce((sum, goal) => sum + goal.target_amount, 0);
+}
+
+/**
+ * Get the earliest start date and latest end date from all active goals.
+ * Returns null if there are no active goals.
+ */
+export function getActiveDateRange(): { start: string; end: string } | null {
+  const activeGoals = getActiveGoals();
+  if (activeGoals.length === 0) return null;
+  
+  const starts = activeGoals.map(g => g.start_date);
+  const ends = activeGoals.map(g => g.end_date);
+  
+  return {
+    start: starts.sort()[0],
+    end: ends.sort().reverse()[0],
+  };
+}
+
 export function insertSavingsGoal(
   title: string,
   target_amount: number,

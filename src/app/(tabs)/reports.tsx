@@ -42,7 +42,7 @@ import {
   getYearRange,
   getBudgetBalance,
   getBalanceOverTime,
-  getActiveSavingsGoal,
+  getActiveGoals,
   getSavingsProgress,
   today,
   toISODate,
@@ -152,7 +152,7 @@ export default function ReportsScreen() {
   const [budgetCurrentBalance, setBudgetCurrentBalance] = useState(0);
   const [monthExpenses, setMonthExpenses] = useState(0);
   const [monthGains, setMonthGains] = useState(0);
-  const [activeSavingsGoal, setActiveSavingsGoal] = useState<SavingsGoal | null>(null);
+  const [activeGoals, setActiveGoals] = useState<SavingsGoal[]>([]);
   const [savingsNet, setSavingsNet] = useState(0);
 
   const { start, end, label } = useMemo(
@@ -187,11 +187,14 @@ export default function ReportsScreen() {
     setMonthExpenses(getTotalInRange(mStart, mEnd));
     setMonthGains(getGainTotalInRange(mStart, mEnd));
 
-    // Active savings goal
-    const goal = getActiveSavingsGoal();
-    setActiveSavingsGoal(goal);
-    if (goal) {
-      setSavingsNet(getSavingsProgress(goal.start_date, goal.end_date));
+    // Active savings goals — sum targets, use widest date range
+    const goals = getActiveGoals();
+    setActiveGoals(goals);
+    if (goals.length > 0) {
+      const rangeStart = goals.map(g => g.start_date).sort()[0];
+      const rangeEnd = goals.map(g => g.end_date).sort().reverse()[0];
+      // net saved = gains - expenses over the combined active period
+      setSavingsNet(getSavingsProgress(rangeStart, rangeEnd));
     } else {
       setSavingsNet(0);
     }
@@ -469,17 +472,17 @@ export default function ReportsScreen() {
         </View>
 
         {/* ── Compact savings card ──────────────────────────────────────── */}
-        {activeSavingsGoal && (() => {
-          const target = activeSavingsGoal.target_amount;
-          const isMet = savingsNet >= target;
-          const pct = target > 0 ? Math.min(1, Math.max(0, savingsNet / target)) : 0;
-          const remaining = target - savingsNet;
+        {activeGoals.length > 0 && (() => {
+          const combinedTarget = activeGoals.reduce((sum, g) => sum + g.target_amount, 0);
+          const isMet = savingsNet >= combinedTarget;
+          const pct = combinedTarget > 0 ? Math.min(1, Math.max(0, savingsNet / combinedTarget)) : 0;
+          const remaining = combinedTarget - savingsNet;
           return (
             <View style={[styles.compactSavingsCard, { backgroundColor: colors.backgroundSoft }]}>
               <View style={styles.compactSavingsRow}>
                 <Text style={[styles.savingsStatusText, { color: isMet ? "#16a34a" : "#dc2626" }]}>
                   {isMet
-                    ? `+₹${(savingsNet - target).toFixed(2)} extra saved`
+                    ? `+₹${(savingsNet - combinedTarget).toFixed(2)} extra saved`
                     : `₹${remaining.toFixed(2)} more to save`}
                 </Text>
                 <Text style={[styles.savingsPct, { color: colors.mute }]}>
@@ -497,6 +500,11 @@ export default function ReportsScreen() {
                   ]}
                 />
               </View>
+              {activeGoals.length > 1 && (
+                <Text style={[styles.savingsGoalCount, { color: colors.mute }]}>
+                  {activeGoals.length} goals · target ₹{combinedTarget.toFixed(2)}
+                </Text>
+              )}
             </View>
           );
         })()}
@@ -757,5 +765,10 @@ const styles = StyleSheet.create({
   savingsMiniBarFill: {
     borderRadius: 999,
     height: 4,
+  },
+  savingsGoalCount: {
+    fontFamily: "Inter",
+    fontSize: 11,
+    marginTop: 8,
   },
 });
