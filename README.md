@@ -18,27 +18,32 @@ Grab the latest APK from the [Releases](https://github.com/piush/expense-tracker
 
 ## Screenshots
 
-| Home | Budget | Savings |
-|:---:|:---:|:---:|
-| ![Home](screenshots/home.png) | ![Budget](screenshots/budget.png) | ![Savings](screenshots/savings.png) |
-| **Reports** | **Settings** | **Add Transaction** |
-| ![Reports](screenshots/reports.png) | ![Settings](screenshots/settings.png) | ![Add Transaction](screenshots/add-transaction.png) |
+|                 Home                 |                 Budget                 |                       Savings                        |
+| :----------------------------------: | :------------------------------------: | :--------------------------------------------------: |
+|    ![Home](screenshots/home.jpeg)    |   ![Budget](screenshots/budget.jpeg)   |         ![Savings](screenshots/savings.jpeg)         |
+|             **Reports**              |              **Settings**              |                 **Add Transaction**                  |
+| ![Reports](screenshots/reports.jpeg) | ![Settings](screenshots/settings.jpeg) | ![Add Transaction](screenshots/add-transaction.jpeg) |
 
 ## Pages
 
 ### Home (`(tabs)/index.tsx`)
+
 Today's overview and weekly summary. Shows your current balance, recent transactions, and a quick-glance weekly breakdown. Tap any transaction to edit, long-press to delete. FAB to add a new transaction.
 
 ### Budget (`(tabs)/budget.tsx`)
+
 Set your base balance and track your running total over time. See a line chart of your balance history, plus a full list of all transactions with filters.
 
 ### Savings (`(tabs)/savings.tsx`)
+
 Create monthly or annual savings goals with target amounts. Large status text (green on track / red behind) and progress bars show how you're doing against each goal.
 
 ### Reports (`(tabs)/reports.tsx`)
+
 Visual breakdowns of your finances — daily, weekly, monthly, and yearly. Line charts for trends, bar charts for comparisons, and donut charts for category distribution.
 
 ### Settings (`(tabs)/settings/`)
+
 - **Theme** — toggle between light and dark mode
 - **Categories** — add, edit, and delete custom categories (predefined ones are locked)
 - **Export** — CSV export with date range picker
